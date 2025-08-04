@@ -15,19 +15,37 @@ graph TB
     subgraph "Electron Main Process"
         MP[Main Process]
         ES[Express Server]
-        DB[(SQLite Database)]
-        FS[File System]
-        AI[AI Service Layer]
+        subgraph "Data Layer"
+            DB[(SQLite + SQLCipher)]
+            IDX[Search Index FTS5]
+            CACHE[LRU Cache]
+        end
+        subgraph "Service Layer"
+            FS[File System Manager]
+            AI[AI Context Manager]
+            SYNC[Sync Engine]
+            AUDIT[Audit Logger]
+        end
     end
     
     subgraph "Electron Renderer Process"
         RF[React Frontend]
-        subgraph "React Components"
-            NE[Note Editor]
-            PM[People Manager]
-            TM[Todo Manager]
-            KG[Knowledge Graph]
-            CV[Calendar View]
+        subgraph "State Management"
+            STORE[Redux Store]
+            RTK[RTK Query]
+            PERSIST[Redux Persist]
+        end
+        subgraph "UI Components"
+            NE[Note Editor + Virtual Scroll]
+            PM[People Manager + Search]
+            TM[Todo Manager + Filters]
+            KG[Knowledge Graph + WebGL]
+            CV[Calendar View + Virtualization]
+        end
+        subgraph "Core Services"
+            KB[Keyboard Manager]
+            A11Y[Accessibility Manager]
+            THEME[Theme Manager]
         end
     end
     
@@ -35,17 +53,42 @@ graph TB
         OPENAI[OpenAI API]
         GEMINI[Gemini API]
         GROK[Grok API]
+        LOCAL_AI[Local AI Fallback]
     end
     
     MP --> RF
-    RF --> ES
+    RF <--> RTK
+    RTK --> ES
     ES --> DB
-    ES --> FS
+    ES --> IDX
+    ES --> CACHE
     ES --> AI
     AI --> OPENAI
     AI --> GEMINI
     AI --> GROK
+    AI --> LOCAL_AI
+    SYNC --> AUDIT
 ```
+
+### Performance-First Architecture Principles
+
+**Data Access Optimization:**
+- Implement connection pooling for SQLite
+- Use prepared statements for all queries
+- Implement query result caching with TTL
+- Add database query performance monitoring
+
+**Memory Management:**
+- Implement virtual scrolling for all large lists
+- Use React.memo and useMemo strategically
+- Implement image lazy loading and compression
+- Add memory usage monitoring and cleanup
+
+**Startup Performance:**
+- Lazy load non-critical components
+- Implement code splitting by feature
+- Preload critical data during splash screen
+- Use service workers for background tasks
 
 ### Process Architecture
 
@@ -278,16 +321,50 @@ CREATE TABLE notes (
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
     content TEXT,
+    content_hash TEXT NOT NULL, -- For change detection
     category TEXT DEFAULT 'Note',
     tags TEXT, -- JSON array
     folder_path TEXT,
-    scheduled_date DATETIME, -- For meeting notes, scheduled content
+    scheduled_date DATETIME,
+    word_count INTEGER DEFAULT 0,
     is_archived BOOLEAN DEFAULT FALSE,
     is_pinned BOOLEAN DEFAULT FALSE,
     is_favorite BOOLEAN DEFAULT FALSE,
+    version INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT DEFAULT 'user',
+    updated_by TEXT DEFAULT 'user'
 );
+
+-- Performance Indexes
+CREATE INDEX idx_notes_updated_at ON notes(updated_at DESC);
+CREATE INDEX idx_notes_category ON notes(category);
+CREATE INDEX idx_notes_folder_path ON notes(folder_path);
+CREATE INDEX idx_notes_scheduled_date ON notes(scheduled_date);
+CREATE INDEX idx_notes_content_hash ON notes(content_hash);
+
+-- Full-Text Search
+CREATE VIRTUAL TABLE notes_fts USING fts5(
+    title, content, tags,
+    content='notes',
+    content_rowid='id'
+);
+
+-- Triggers for FTS sync
+CREATE TRIGGER notes_fts_insert AFTER INSERT ON notes BEGIN
+    INSERT INTO notes_fts(rowid, title, content, tags) 
+    VALUES (new.id, new.title, new.content, new.tags);
+END;
+
+CREATE TRIGGER notes_fts_update AFTER UPDATE ON notes BEGIN
+    UPDATE notes_fts SET title=new.title, content=new.content, tags=new.tags 
+    WHERE rowid=new.id;
+END;
+
+CREATE TRIGGER notes_fts_delete AFTER DELETE ON notes BEGIN
+    DELETE FROM notes_fts WHERE rowid=old.id;
+END;
 ```
 
 **People Table:**
@@ -449,24 +526,86 @@ interface CalendarViewState {
 }
 ```
 
-## Error Handling
+## Error Handling & Resilience
 
-### Application-Level Error Handling
+### Comprehensive Error Management Strategy
 
-**Database Errors:**
-- Connection failures: Graceful degradation with user notification
-- Migration errors: Rollback mechanism with user guidance
-- Corruption detection: Backup restoration options
+**Database Resilience:**
+```typescript
+interface DatabaseError {
+    code: string;
+    message: string;
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    recovery: 'retry' | 'rollback' | 'restore' | 'manual';
+    userAction?: string;
+}
 
-**File System Errors:**
-- Permission issues: Clear error messages with resolution steps
-- Disk space: Proactive monitoring and user warnings
-- Path validation: Sanitization and validation
+class DatabaseManager {
+    private retryPolicy = new ExponentialBackoff();
+    private healthCheck = new HealthMonitor();
+    
+    async executeQuery(query: string, params: any[]): Promise<any> {
+        return this.retryPolicy.execute(async () => {
+            try {
+                return await this.db.prepare(query).all(params);
+            } catch (error) {
+                await this.handleDatabaseError(error);
+                throw error;
+            }
+        });
+    }
+    
+    private async handleDatabaseError(error: any): Promise<void> {
+        // Log error with context
+        await this.auditLogger.logError(error);
+        
+        // Check database integrity
+        if (error.code === 'SQLITE_CORRUPT') {
+            await this.initiateRecovery();
+        }
+        
+        // Update health status
+        this.healthCheck.recordFailure(error);
+    }
+}
+```
 
-**Network Errors (AI Services):**
-- API failures: Graceful degradation, offline mode
-- Rate limiting: Queue management and user feedback
-- Authentication errors: Clear re-authentication flow
+**AI Service Resilience:**
+```typescript
+class AIServiceManager {
+    private circuitBreaker = new CircuitBreaker();
+    private contextManager = new AIContextManager();
+    private fallbackService = new LocalAIFallback();
+    
+    async processRequest(request: AIRequest): Promise<AIResponse> {
+        // Check circuit breaker
+        if (this.circuitBreaker.isOpen()) {
+            return this.fallbackService.process(request);
+        }
+        
+        try {
+            const response = await this.primaryService.process(request);
+            this.circuitBreaker.recordSuccess();
+            return response;
+        } catch (error) {
+            this.circuitBreaker.recordFailure();
+            
+            // Intelligent fallback based on request type
+            if (request.type === 'todo_extraction') {
+                return this.fallbackService.extractTodos(request.content);
+            }
+            
+            throw new AIServiceError('AI service unavailable', error);
+        }
+    }
+}
+```
+
+**User Experience Error Recovery:**
+- **Optimistic UI Updates**: Show changes immediately, rollback on failure
+- **Conflict Resolution**: Detect and resolve concurrent edit conflicts
+- **Data Recovery**: Multiple backup strategies with point-in-time recovery
+- **Graceful Degradation**: Core functionality works even when advanced features fail
 
 ### User Experience Error Handling
 
@@ -484,6 +623,211 @@ interface CalendarViewState {
 - Undo/redo functionality
 - Trash/restore for deleted items
 - Data export capabilities
+
+## Security Architecture
+
+### Data Protection Strategy
+
+**Encryption at Rest:**
+```typescript
+class SecureDataManager {
+    private cipher: SQLCipher;
+    private keyManager: KeychainManager;
+    
+    async initializeDatabase(userPassword: string): Promise<void> {
+        const dbKey = await this.keyManager.deriveKey(userPassword);
+        this.cipher = new SQLCipher(dbKey);
+        
+        // Enable encryption
+        await this.cipher.pragma('cipher_page_size = 4096');
+        await this.cipher.pragma('kdf_iter = 256000');
+    }
+    
+    async encryptSensitiveData(data: any): Promise<string> {
+        const key = await this.keyManager.getEncryptionKey();
+        return AES.encrypt(JSON.stringify(data), key).toString();
+    }
+}
+```
+
+**Input Sanitization & Validation:**
+```typescript
+class SecurityValidator {
+    static sanitizeContent(content: string): string {
+        return DOMPurify.sanitize(content, {
+            ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'h1', 'h2', 'h3'],
+            ALLOWED_ATTR: ['class', 'id'],
+            FORBID_SCRIPT: true
+        });
+    }
+    
+    static validateApiInput(input: any, schema: JSONSchema): ValidationResult {
+        const validator = new Ajv({ allErrors: true });
+        const validate = validator.compile(schema);
+        
+        if (!validate(input)) {
+            throw new ValidationError(validate.errors);
+        }
+        
+        return { valid: true, sanitized: this.sanitizeObject(input) };
+    }
+}
+```
+
+**Audit Logging:**
+```typescript
+interface AuditEvent {
+    timestamp: Date;
+    userId: string;
+    action: string;
+    resource: string;
+    resourceId: string;
+    metadata: Record<string, any>;
+    ipAddress?: string;
+    userAgent?: string;
+}
+
+class AuditLogger {
+    async logEvent(event: AuditEvent): Promise<void> {
+        const encryptedEvent = await this.encrypt(event);
+        await this.db.run(`
+            INSERT INTO audit_log (timestamp, event_data, hash)
+            VALUES (?, ?, ?)
+        `, [event.timestamp, encryptedEvent, this.calculateHash(event)]);
+    }
+}
+```
+
+## Performance Optimization
+
+### Virtual Scrolling Implementation
+```typescript
+class VirtualizedNoteList extends React.Component {
+    private observer: IntersectionObserver;
+    private cache = new Map<number, NoteItem>();
+    
+    componentDidMount() {
+        this.observer = new IntersectionObserver(
+            this.handleIntersection,
+            { rootMargin: '100px' }
+        );
+    }
+    
+    private handleIntersection = (entries: IntersectionObserverEntry[]) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                this.loadNoteData(entry.target.dataset.noteId);
+            }
+        });
+    };
+    
+    render() {
+        return (
+            <FixedSizeList
+                height={600}
+                itemCount={this.props.noteCount}
+                itemSize={80}
+                itemData={this.props.notes}
+                overscanCount={5}
+            >
+                {this.renderNoteItem}
+            </FixedSizeList>
+        );
+    }
+}
+```
+
+### Search Performance Optimization
+```typescript
+class SearchManager {
+    private searchIndex: FlexSearch.Index;
+    private debouncer = new Debouncer(300);
+    
+    constructor() {
+        this.searchIndex = new FlexSearch.Index({
+            preset: 'performance',
+            tokenize: 'forward',
+            resolution: 9,
+            depth: 4
+        });
+    }
+    
+    async search(query: string): Promise<SearchResult[]> {
+        return this.debouncer.execute(async () => {
+            // Use FTS5 for complex queries
+            if (this.isComplexQuery(query)) {
+                return this.fullTextSearch(query);
+            }
+            
+            // Use in-memory index for simple queries
+            const results = await this.searchIndex.search(query, { limit: 50 });
+            return this.hydrateResults(results);
+        });
+    }
+}
+```
+
+## Accessibility & User Experience
+
+### Keyboard Navigation System
+```typescript
+class KeyboardManager {
+    private shortcuts = new Map<string, KeyboardShortcut>();
+    private contextStack: string[] = [];
+    
+    registerShortcut(context: string, key: string, action: () => void) {
+        const shortcut = new KeyboardShortcut(key, action, context);
+        this.shortcuts.set(`${context}:${key}`, shortcut);
+    }
+    
+    handleKeyDown = (event: KeyboardEvent) => {
+        const currentContext = this.getCurrentContext();
+        const shortcutKey = `${currentContext}:${this.getKeyString(event)}`;
+        
+        const shortcut = this.shortcuts.get(shortcutKey);
+        if (shortcut && shortcut.canExecute()) {
+            event.preventDefault();
+            shortcut.execute();
+        }
+    };
+    
+    // Global shortcuts
+    private initializeGlobalShortcuts() {
+        this.registerShortcut('global', 'cmd+k', () => this.openCommandPalette());
+        this.registerShortcut('global', 'cmd+n', () => this.createNewNote());
+        this.registerShortcut('global', 'cmd+shift+f', () => this.openGlobalSearch());
+        this.registerShortcut('global', 'cmd+/', () => this.showKeyboardHelp());
+    }
+}
+```
+
+### Accessibility Implementation
+```typescript
+class AccessibilityManager {
+    private announcer: LiveAnnouncer;
+    private focusManager: FocusManager;
+    
+    announceChange(message: string, priority: 'polite' | 'assertive' = 'polite') {
+        this.announcer.announce(message, priority);
+    }
+    
+    manageFocus(element: HTMLElement, options?: FocusOptions) {
+        this.focusManager.setFocus(element, {
+            preventScroll: options?.preventScroll ?? false,
+            restoreOnUnmount: options?.restoreOnUnmount ?? true
+        });
+    }
+    
+    // ARIA live regions for dynamic content
+    setupLiveRegions() {
+        const statusRegion = document.createElement('div');
+        statusRegion.setAttribute('aria-live', 'polite');
+        statusRegion.setAttribute('aria-atomic', 'true');
+        statusRegion.className = 'sr-only';
+        document.body.appendChild(statusRegion);
+    }
+}
+```
 
 ## Testing Strategy
 

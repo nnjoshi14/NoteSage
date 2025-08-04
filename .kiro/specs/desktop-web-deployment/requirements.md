@@ -13,10 +13,14 @@ This feature enables NoteSage to run as a native desktop application, providing 
 #### Acceptance Criteria
 
 1. WHEN the user creates a new note THEN the system SHALL provide a rich text editor with formatting options (bold, italic, headings, lists, quotes, code)
-2. WHEN the user types @ in a note THEN the system SHALL show a dropdown of people to mention
-3. WHEN the user saves a note THEN the system SHALL automatically save changes to the local SQLite database
-4. WHEN the user views a note THEN the system SHALL display word count, last edited date, and save status
-5. IF the user mentions a person THEN the system SHALL create a connection between the note and that person
+2. WHEN the user types @ in a note THEN the system SHALL show a dropdown of people to mention. If user types after @ the system should show users starting name or surname with given text.
+3. WHEN the user types # in a note THEN the system SHALL show a dropdown of note titles to mention where last edited note should apper first. If user is typeing after # it should list notes starting with given string.
+5. Note should have categories field, with support to add custom categories. Defualt categories should be Note & Meeting.
+6. System should allow to store notes in herachical / directory structure. 
+7. WHEN the user saves a note THEN the system SHALL automatically save changes to the local SQLite database
+7. WHEN the user views a note THEN the system SHALL open note to edit. View to edit should be the setting and readonly notes are not needed.
+8. IF the user mentions a person or note THEN the system SHALL create a connection between the note and that person
+9. On given note User should be be able to see list of other noteds and their edit timems from which this note is reffered. 
 
 ### Requirement 2
 

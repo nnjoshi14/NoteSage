@@ -59,6 +59,22 @@ This feature enables NoteSage to run as a native desktop application, providing 
 
 ### Requirement 3
 
+**User Story:** As a user, I want to manage todos and tasks in the desktop application, so that I can track action items extracted from my notes.
+
+#### Acceptance Criteria
+
+1. WHEN AI extracts todos from notes THEN the system SHALL display them in a dedicated todos view
+2. WHEN the user marks a todo as complete THEN the system SHALL update the status and timestamp
+3. WHEN the user views a todo THEN the system SHALL show which note it came from
+4. WHEN the user manually adds a todo THEN the system SHALL require linking the todo to a specific note
+5. IF a note is deleted THEN the system SHALL preserve associated todos with a note reference
+6. WHEN the user marks a todo as complete THEN the system SHALL update all references to that todo across notes and common pages
+7. WHEN the user creates a todo view THEN the system SHALL allow filtering todos based on search criteria of pages with option to include only pending todos
+8. WHEN the user accesses calendar view THEN the system SHALL display todos with due dates, notes with dates, and other time-based content in a calendar format
+9. WHEN the user assigns a todo to a person THEN the system SHALL link the todo to that person and show it in their profile
+
+### Requirement 4
+
 **User Story:** As a user, I want to visualize my knowledge graph in the desktop application, so that I can see connections between my notes and people.
 
 #### Acceptance Criteria
@@ -69,7 +85,7 @@ This feature enables NoteSage to run as a native desktop application, providing 
 4. WHEN the user searches in the graph THEN the system SHALL filter nodes based on the search query
 5. IF there are no connections THEN the system SHALL show an empty state with helpful instructions
 
-### Requirement 4
+### Requirement 5
 
 **User Story:** As a user, I want AI-powered features in the desktop application, so that I can get insights, extract todos, and analyze relationships automatically.
 
@@ -80,18 +96,6 @@ This feature enables NoteSage to run as a native desktop application, providing 
 3. WHEN the user requests insights THEN the system SHALL generate patterns, suggestions, and connections from their knowledge base
 4. WHEN AI services are unavailable THEN the system SHALL gracefully degrade without breaking core functionality
 5. IF no AI provider is configured THEN the system SHALL still provide all manual features
-
-### Requirement 5
-
-**User Story:** As a user, I want to manage todos and tasks in the desktop application, so that I can track action items extracted from my notes.
-
-#### Acceptance Criteria
-
-1. WHEN AI extracts todos from notes THEN the system SHALL display them in a dedicated todos view
-2. WHEN the user marks a todo as complete THEN the system SHALL update the status and timestamp
-3. WHEN the user views a todo THEN the system SHALL show which note it came from
-4. WHEN the user manually adds a todo THEN the system SHALL allow creating todos not linked to notes
-5. IF a note is deleted THEN the system SHALL preserve associated todos with a note reference
 
 ### Requirement 6
 

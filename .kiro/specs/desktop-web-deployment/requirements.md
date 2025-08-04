@@ -18,7 +18,7 @@ This feature enables NoteSage to run as a native desktop application, providing 
 4. WHEN the user types "/" in a note THEN the system SHALL show slash commands for quick insertion of content types (tables, code blocks, callouts, etc.)
 5. WHEN the user creates tables THEN the system SHALL provide table editing capabilities with add/remove rows and columns
 6. WHEN the user adds images or files THEN the system SHALL support embedding and displaying media content within notes
-7. WHEN the user needs mathematical expressions THEN the system SHALL support LaTeX/MathJax rendering for formulas
+7. WHEN the user creates mermaid diagrams THEN the system SHALL support rendering of flowcharts, sequence diagrams, and other mermaid diagram types
 8. WHEN the user creates callouts THEN the system SHALL provide info boxes, warnings, tips, and other styled content blocks
 9. WHEN the user adds code blocks THEN the system SHALL provide syntax highlighting for different programming languages
 10. WHEN the user performs global search THEN the system SHALL search across all note content with filtering options
@@ -40,7 +40,10 @@ This feature enables NoteSage to run as a native desktop application, providing 
 26. WHEN the user saves a note THEN the system SHALL automatically save changes to the locally hosted storage.
 27. WHEN the user views a note THEN the system SHALL open note to edit. View to edit should be the setting and readonly notes are not needed.
 28. IF the user mentions a person or note THEN the system SHALL create a connection between the note and that person
-29. On given note User should be able to see list of other notes and their edit times from which this note is referred. 
+29. On given note User should be able to see list of other notes and their edit times from which this note is referred.
+30. WHEN the user deletes a note THEN the system SHALL move the note to trash and allow permanent deletion or restoration
+31. WHEN the user filters notes THEN the system SHALL provide filtering by categories, tags, date ranges, and other criteria
+32. WHEN the user searches notes THEN the system SHALL provide advanced search with filters, operators, and content-specific search options 
 
 ### Requirement 2
 

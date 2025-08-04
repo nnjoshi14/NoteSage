@@ -63,7 +63,7 @@ This feature enables NoteSage to run as a native desktop application, providing 
 
 #### Acceptance Criteria
 
-1. WHEN the user opens the knowledge graph THEN the system SHALL display an interactive D3.js visualization
+1. WHEN the user opens the knowledge graph THEN the system SHALL display an interactive visualization
 2. WHEN the user clicks on a node THEN the system SHALL show details about that note or person
 3. WHEN the user drags a node THEN the system SHALL allow repositioning and update the graph layout
 4. WHEN the user searches in the graph THEN the system SHALL filter nodes based on the search query
@@ -116,15 +116,3 @@ This feature enables NoteSage to run as a native desktop application, providing 
 3. WHEN the application starts THEN the system SHALL automatically run necessary database migrations
 4. WHEN environment setup is needed THEN the system SHALL provide clear documentation and automated setup
 5. IF setup fails THEN the system SHALL provide helpful error messages and troubleshooting guidance
-
-### Requirement 8
-
-**User Story:** As a developer, I want to run NoteSage locally for development, so that I can test changes before building the desktop application.
-
-#### Acceptance Criteria
-
-1. WHEN the developer runs a local setup command THEN the system SHALL install all dependencies for both client and server
-2. WHEN the developer runs a start command THEN the system SHALL concurrently start both the frontend and backend services
-3. WHEN the local development server starts THEN the system SHALL be accessible via a web browser at localhost
-4. WHEN the developer makes code changes THEN the system SHALL support hot reloading for both frontend and backend
-5. IF dependencies are missing THEN the system SHALL provide clear error messages and installation instructions

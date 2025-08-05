@@ -128,15 +128,45 @@ This feature enables NoteSage to run as a native desktop application, providing 
 
 ### Requirement 8
 
-**User Story:** As a user, I want NoteSage to be available across multiple platforms (desktop, web, mobile), so that I can access my knowledge base from any device while maintaining offline capabilities on desktop.
+**User Story:** As a user, I want to connect my desktop application to a NoteSage server (local or cloud), so that I can access my data and collaborate with others.
+
+#### Acceptance Criteria
+
+1. WHEN the user first launches the desktop application THEN the system SHALL prompt for server connection details (URL, port, credentials)
+2. WHEN the user connects to a server THEN the system SHALL authenticate and establish connection to the specified server instance
+3. WHEN the server supports multiple users THEN the system SHALL handle user authentication and authorization properly
+4. WHEN switching between servers THEN the system SHALL allow users to configure multiple server profiles and switch between them
+5. WHEN the server is unavailable THEN the system SHALL continue working with local cache and display connection status
+6. WHEN configuring server settings THEN the system SHALL allow users to specify server URL, port, authentication credentials, and connection preferences
+7. WHEN the desktop app updates THEN the system SHALL maintain compatibility with existing server installations
+8. WHEN connecting to different server versions THEN the system SHALL handle API version compatibility gracefully
+
+### Requirement 9
+
+**User Story:** As an administrator, I want to install and manage a NoteSage server, so that I can provide NoteSage services to multiple users on my network or organization.
+
+#### Acceptance Criteria
+
+1. WHEN installing the server THEN the system SHALL provide standalone server installation packages for different platforms (Windows, macOS, Linux)
+2. WHEN the server starts THEN the system SHALL initialize the database and create necessary tables and indexes
+3. WHEN configuring the server THEN the system SHALL allow setting up database connection, port, authentication method, and user management
+4. WHEN managing users THEN the system SHALL provide user creation, authentication, and authorization capabilities
+5. WHEN the server runs THEN the system SHALL support multiple concurrent desktop clients connecting simultaneously
+6. WHEN backing up data THEN the system SHALL provide database backup and restore functionality
+7. WHEN upgrading the server THEN the system SHALL handle database migrations and maintain data integrity
+8. WHEN deploying to cloud THEN the system SHALL support the same server package with minimal configuration changes
+
+### Requirement 10
+
+**User Story:** As a user, I want NoteSage to be available across multiple platforms (desktop, web, mobile), so that I can access my knowledge base from any device while connecting to the same server.
 
 #### Acceptance Criteria
 
 1. WHEN the system is architected THEN the system SHALL support a multi-platform approach with desktop (current focus), web, Android, and iOS clients
-2. WHEN designing the architecture THEN the system SHALL separate core business logic from platform-specific UI implementations
-3. WHEN building the desktop application THEN the system SHALL maintain offline-first capabilities as a key differentiator
-4. WHEN planning for web deployment THEN the system SHALL design for cloud hosting (GCP) with shared data synchronization
-5. WHEN considering mobile platforms THEN the system SHALL design data models and APIs that work across all platforms
-6. WHEN implementing offline features THEN the system SHALL ensure desktop offline functionality continues as a core offering even when other platforms are added
-7. WHEN designing data storage THEN the system SHALL support both local storage (desktop) and cloud storage (web/mobile) with synchronization capabilities
-8. WHEN building platform-specific features THEN the system SHALL maintain feature parity where possible across all platforms
+2. WHEN designing the architecture THEN the system SHALL separate server backend from client applications completely
+3. WHEN building client applications THEN the system SHALL ensure all clients connect to the same server API
+4. WHEN planning for future deployment THEN the system SHALL design server for both local installation and cloud deployment
+5. WHEN considering mobile platforms THEN the system SHALL design data models and APIs that work across all client platforms
+6. WHEN implementing server features THEN the system SHALL ensure the same server package can run locally or in the cloud without code changes
+7. WHEN designing data storage THEN the system SHALL use the same database schema whether server runs locally or in cloud
+8. WHEN building platform-specific features THEN the system SHALL maintain feature parity where possible across all client platforms

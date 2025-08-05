@@ -15,35 +15,49 @@ The design prioritizes:
 
 ## Architecture
 
-### Multi-Platform Architecture
+### Separated Client-Server Architecture
 
-The application uses a layered architecture designed to support multiple platforms while maintaining desktop-first offline capabilities:
+The application uses a clean client-server architecture with separate desktop client and standalone server:
 
 ```mermaid
 graph TB
-    subgraph "Desktop Client (Current Focus)"
+    subgraph "NoteSage Server (Standalone)"
+        subgraph "Server Application"
+            SERVER[Express/Fastify Server]
+            API[REST API Layer]
+            AUTH[Authentication & Authorization]
+            MIDDLEWARE[Middleware Stack]
+            WEBSOCKET[WebSocket for Real-time]
+        end
+        subgraph "Storage Layer"
+            DB[(PostgreSQL/SQLite)]
+            IDX[Full-Text Search Index]
+            CACHE[Redis/Memory Cache]
+            FILES[File Storage]
+        end
+        subgraph "Service Layer"
+            NOTES[Notes Service]
+            TODOS[Todos Service]
+            PEOPLE[People Service]
+            AI[AI Service]
+            SEARCH[Search Service]
+            USER[User Management]
+        end
+    end
+    
+    subgraph "Desktop Client (Electron)"
         subgraph "Electron Main Process"
             MP[Main Process]
-            subgraph "Storage Layer"
-                FS[File System - Markdown Files]
-                DB[(SQLite Database)]
-                IDX[Search Index FTS5]
-                CACHE[LRU Cache]
-            end
-            subgraph "Service Layer"
-                FM[File Manager]
-                AI[AI Context Manager]
-                TODO[Todo Sync Manager]
-                SEARCH[Search Engine]
-                API[Internal API Layer]
-                SYNC[Cloud Sync Engine]
-            end
+            OFFLINE[Offline Cache]
+            SYNC[Sync Manager]
         end
         
         subgraph "Electron Renderer Process"
             subgraph "UI Framework"
                 UI[React/Vue/Svelte]
                 STATE[State Management]
+                HTTP[HTTP Client]
+                WS[WebSocket Client]
             end
             subgraph "UI Components"
                 NE[Note Editor]
@@ -51,6 +65,7 @@ graph TB
                 TM[Todo Manager]
                 KG[Knowledge Graph]
                 CV[Calendar View]
+                SETTINGS[Server Connection Settings]
             end
             subgraph "Desktop Features"
                 MENU[Native Menus]
@@ -61,92 +76,112 @@ graph TB
         end
     end
     
-    subgraph "Future Platforms"
-        WEB[Web Client - GCP Hosted]
-        ANDROID[Android Client]
-        IOS[iOS Client]
+    subgraph "Future Clients"
+        WEB[Web Browser Client]
+        MOBILE[Mobile App Clients]
+        OTHER[Other Desktop Clients]
     end
     
-    subgraph "Shared Services"
-        subgraph "Cloud Infrastructure (Future)"
-            CLOUD_API[Cloud API Server]
-            CLOUD_DB[(Cloud Database)]
-            CLOUD_STORAGE[Cloud File Storage]
-            CLOUD_SYNC[Sync Service]
-        end
-        
-        subgraph "External Services"
-            OPENAI[OpenAI API]
-            GEMINI[Gemini API]
-            GROK[Grok API]
-        end
+    subgraph "External Services"
+        OPENAI[OpenAI API]
+        GEMINI[Gemini API]
+        GROK[Grok API]
     end
     
-    MP --> UI
-    UI <--> STATE
-    STATE --> API
-    API --> FS
-    API --> DB
-    API --> AI
-    SYNC -.-> CLOUD_SYNC
+    subgraph "Future Cloud Deployment"
+        CLOUD_INFRA[Cloud Infrastructure]
+        CLOUD_DB[(Managed Database)]
+        LOAD_BALANCER[Load Balancer]
+    end
     
-    WEB -.-> CLOUD_API
-    ANDROID -.-> CLOUD_API
-    IOS -.-> CLOUD_API
-    
+    UI --> HTTP
+    UI --> WS
+    HTTP --> API
+    WS --> WEBSOCKET
+    API --> NOTES
+    API --> TODOS
+    API --> PEOPLE
+    API --> USER
+    NOTES --> DB
+    TODOS --> DB
+    PEOPLE --> DB
+    USER --> DB
     AI --> OPENAI
     AI --> GEMINI
     AI --> GROK
+    
+    WEB -.-> API
+    MOBILE -.-> API
+    OTHER -.-> API
+    
+    SERVER -.-> CLOUD_INFRA
+    DB -.-> CLOUD_DB
 ```
 
 ### Multi-Platform Strategy
 
-**Phase 1: Desktop-First (Current Focus)**
-- Build robust offline-first desktop application
-- Establish core architecture and data models
-- Perfect user experience and performance
-- Create foundation for future platform expansion
+**Phase 1: Desktop Client + Standalone Server (Current Focus)**
+- Build desktop client application (Electron-based)
+- Build standalone NoteSage server (Node.js/Express)
+- Establish clean client-server separation via REST API
+- Server supports multiple concurrent users
+- Manual server installation and configuration
 
-**Phase 2: Cloud Infrastructure (Future)**
-- Deploy cloud API server on GCP
-- Implement cloud database and file storage
-- Build synchronization service between desktop and cloud
-- Maintain desktop offline capabilities as key differentiator
-
-**Phase 3: Web & Mobile Clients (Future)**
-- Web client using same UI components (React/Vue/Svelte)
+**Phase 2: Multi-Platform Clients (Future)**
+- Web client connecting to same server API
 - Android and iOS native clients
-- Shared business logic through standardized APIs
-- Feature parity across platforms where possible
+- All clients connect to same server instance
+- Server remains unchanged across client platforms
 
-### Cloud-First Storage Strategy
+**Phase 3: Cloud Deployment (Future)**
+- Lift-and-shift same server package to cloud infrastructure
+- No code changes needed in server or clients
+- Cloud deployment with managed database
+- Enterprise hosting and scaling options
 
-**Primary Storage: Cloud Database**
-- **PostgreSQL/Cloud SQL**: Primary data storage for all platforms
-- **Structured data**: Notes, todos, people, relationships stored as database records
-- **Rich content**: Note content stored as structured JSON/HTML for rich editing
-- **Real-time sync**: Immediate synchronization across all connected devices
-- **Scalable search**: Full-text search with database indexes
+### Standalone Server Architecture
+
+**NoteSage Server (Standalone Package):**
+- **Independent installation**: Server installs separately from desktop client
+- **Multi-user support**: Handles authentication and authorization for multiple users
+- **Database management**: Manages PostgreSQL/SQLite database independently
+- **REST API**: Standard HTTP API for all client operations
+- **WebSocket support**: Real-time updates for collaborative features
+- **Platform agnostic**: Same server runs on Windows, macOS, Linux
+
+**Database Strategy:**
+- **PostgreSQL**: Primary choice for multi-user scenarios and full features
+- **SQLite**: Alternative for single-user or simple deployments
+- **Structured data**: Notes, todos, people, relationships as database records
+- **Rich content**: Note content stored as structured JSON for rich editing
+- **Full-text search**: Database indexes for fast search capabilities
 - **ACID transactions**: Data consistency and integrity guaranteed
 
-**Desktop Offline Cache: SQLite Mirror**
-- **Local SQLite cache**: Complete mirror of user's cloud data
-- **Offline-first UX**: All operations work offline with local cache
-- **Background sync**: Automatic synchronization when online
-- **Conflict resolution**: Simple last-write-wins with user override option
-- **Selective sync**: Option to cache only recent/important data
+**Client-Server Communication:**
+- **HTTP REST API**: All CRUD operations via standard REST endpoints
+- **WebSocket connections**: Real-time updates and collaborative editing
+- **Authentication**: JWT tokens or session-based authentication
+- **Offline support**: Desktop client caches data for offline operation
+- **Sync mechanism**: Automatic synchronization when connection restored
 
-**Cross-Platform Consistency:**
-- **Same data model**: Identical database schema across all platforms
-- **Unified APIs**: RESTful APIs work consistently for all clients
-- **Real-time updates**: WebSocket connections for live collaboration
-- **Optimistic updates**: UI updates immediately, syncs in background
+**Multi-Client Architecture:**
+- **Desktop client**: Electron app connects via HTTP/WebSocket
+- **Future web client**: Browser-based client using same API
+- **Mobile clients**: iOS/Android apps connect to same endpoints
+- **API versioning**: Backward compatibility for different client versions
 
-**Data Export/Portability:**
-- **Export functionality**: Export to markdown, JSON, or other formats
-- **Backup options**: Regular automated backups of user data
-- **Import capabilities**: Import from other note-taking applications
-- **Data ownership**: Users can export their complete dataset anytime
+**Deployment Flexibility:**
+- **Local installation**: Install on local machine or network server
+- **Network access**: Multiple users connect to same server instance
+- **Cloud deployment**: Lift-and-shift to cloud with no code changes
+- **Docker support**: Containerized deployment for easy scaling
+- **Configuration**: Environment-based config for different deployment scenarios
+
+**Data Management:**
+- **User isolation**: Each user's data properly isolated and secured
+- **Backup/restore**: Database backup and restore functionality
+- **Export/import**: Data portability tools for migration
+- **Admin interface**: Server administration and user management tools
 
 ### Database Schema Structure
 

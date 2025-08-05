@@ -127,7 +127,26 @@ graph TB
 
 **Rich Text Editor Component:**
 - Block-based editor architecture (similar to Notion)
-- Real-time auto-save functionality
+- Real-time auto-save functionality with 2-second debounce
+- Slash commands ("/") system for quick content insertion:
+  - `/table` - Insert table
+  - `/code` - Insert code block
+  - `/callout` - Insert callout block
+  - `/image` - Insert image
+  - `/mermaid` - Insert mermaid diagram
+- Block-level operations:
+  - Drag and drop to reorder blocks
+  - Duplicate blocks with Cmd+D
+  - Delete blocks with backspace/delete
+  - Block selection and bulk operations
+- Auto-completion and smart suggestions:
+  - @mention autocomplete for people
+  - #reference autocomplete for notes
+  - Tag suggestions based on existing tags
+  - Smart text completion based on note history
+- Dual editing modes:
+  - Rich text WYSIWYG mode (default)
+  - Raw markdown editing mode toggle
 - Support for multiple content types:
   - Text blocks (paragraphs, headings, lists)
   - Media blocks (images, files)
@@ -139,9 +158,33 @@ graph TB
 **Note Organization:**
 - Hierarchical folder structure
 - Category system (Note, Meeting, custom)
-- Tag system with nested hierarchies
-- Favorites/bookmarks
+- Nested hierarchical tag system:
+  - Support for tag hierarchies (e.g., `work/projects/client-a`)
+  - Tag autocomplete with hierarchy visualization
+  - Bulk tag operations
+- Favorites/bookmarks system
 - Archive functionality
+- Custom sorting options:
+  - By date (created/modified)
+  - By title (alphabetical)
+  - By category
+  - By tag
+  - By word count
+  - Custom user-defined sorting
+
+**Note Templates System:**
+- Template creation from existing notes
+- Template categories (meeting, project, daily, etc.)
+- Template variables and placeholders
+- Quick template application via slash commands
+- Template sharing and import/export
+
+**Version History System:**
+- Automatic version snapshots on significant changes
+- Version comparison with diff visualization
+- Restore to previous version capability
+- Version metadata (timestamp, change summary)
+- Configurable retention policy
 
 **Search and Discovery:**
 - Global full-text search
@@ -167,25 +210,48 @@ graph TB
 **Todo List Component:**
 - Dedicated todos view
 - Status tracking (pending/completed)
-- Note linkage display
+- Note linkage display (required for manual todos)
 - Person assignment
+- Cross-reference update system:
+  - When todo marked complete, update all note references
+  - Maintain todo status consistency across all mentions
+  - Real-time sync of todo states
 
 **Todo Views:**
-- Filtered views based on page criteria
-- Calendar integration
+- Advanced filtering system:
+  - Filter by note/page criteria
+  - Pending-only filter option
+  - Filter by assigned person
+  - Filter by due date range
+  - Custom search-based filters
+- Calendar integration with due dates
 - Person-specific todo lists
+- Bulk todo operations (mark complete, assign, delete)
+
+**Manual Todo Creation:**
+- Mandatory note linkage for manually created todos
+- Note selection interface during todo creation
+- Validation to prevent orphaned todos
+- Auto-suggestion of relevant notes based on context
 
 #### 4. Knowledge Graph Visualization
 
 **Graph Component:**
-- D3.js-based interactive visualization
+- D3.js-based interactive visualization with force-directed layout
 - Node types: Notes, People
-- Edge types: Mentions, References
+- Edge types: Mentions, References, Connections
 - Interactive features:
-  - Drag and drop repositioning
-  - Zoom and pan
-  - Node selection and details
-  - Search filtering
+  - Drag and drop repositioning with physics simulation
+  - Zoom and pan with smooth transitions
+  - Node selection with detailed preview panels
+  - Search filtering with node highlighting
+  - Cluster visualization for related content
+  - Customizable node colors and sizes
+  - Export graph as image or data
+- Performance optimizations:
+  - Canvas rendering for large graphs (>1000 nodes)
+  - Level-of-detail rendering
+  - Viewport culling for off-screen nodes
 
 #### 5. Calendar View
 
@@ -334,7 +400,36 @@ CREATE TABLE notes (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_by TEXT DEFAULT 'user',
-    updated_by TEXT DEFAULT 'user'
+    updated_by TEXT DEFAULT 'user',
+    auto_save_enabled BOOLEAN DEFAULT TRUE,
+    last_auto_save DATETIME
+);
+
+-- Version History Table
+CREATE TABLE note_versions (
+    id INTEGER PRIMARY KEY,
+    note_id INTEGER NOT NULL,
+    version_number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT,
+    content_hash TEXT NOT NULL,
+    change_summary TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT DEFAULT 'user',
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+    UNIQUE(note_id, version_number)
+);
+
+-- Note Templates Table
+CREATE TABLE note_templates (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    category TEXT,
+    template_content TEXT NOT NULL,
+    variables TEXT, -- JSON array of template variables
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Performance Indexes
@@ -526,6 +621,108 @@ interface CalendarViewState {
 }
 ```
 
+## Auto-Save System Implementation
+
+### Real-time Auto-Save Architecture
+
+```typescript
+class AutoSaveManager {
+    private saveQueue = new Map<number, SaveOperation>();
+    private debounceTimer: NodeJS.Timeout | null = null;
+    private readonly SAVE_DELAY = 2000; // 2 seconds
+    private readonly MAX_QUEUE_SIZE = 100;
+    
+    async scheduleAutoSave(noteId: number, content: string, title: string): Promise<void> {
+        // Cancel previous timer
+        if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer);
+        }
+        
+        // Add to save queue
+        this.saveQueue.set(noteId, {
+            noteId,
+            content,
+            title,
+            timestamp: Date.now(),
+            contentHash: this.calculateHash(content)
+        });
+        
+        // Limit queue size
+        if (this.saveQueue.size > this.MAX_QUEUE_SIZE) {
+            await this.flushOldestSaves();
+        }
+        
+        // Schedule debounced save
+        this.debounceTimer = setTimeout(() => {
+            this.executePendingSaves();
+        }, this.SAVE_DELAY);
+    }
+    
+    private async executePendingSaves(): Promise<void> {
+        const saves = Array.from(this.saveQueue.values());
+        this.saveQueue.clear();
+        
+        // Group saves by note to handle rapid edits
+        const groupedSaves = this.groupSavesByNote(saves);
+        
+        // Execute saves in parallel
+        const savePromises = groupedSaves.map(save => this.executeSave(save));
+        await Promise.allSettled(savePromises);
+    }
+    
+    private async executeSave(save: SaveOperation): Promise<void> {
+        try {
+            // Check if content actually changed
+            const currentHash = await this.getCurrentContentHash(save.noteId);
+            if (currentHash === save.contentHash) {
+                return; // No changes to save
+            }
+            
+            // Save to SQLite database
+            await this.database.updateNote(save.noteId, {
+                title: save.title,
+                content: save.content,
+                content_hash: save.contentHash,
+                updated_at: new Date(),
+                last_auto_save: new Date()
+            });
+            
+            // Create version snapshot if significant change
+            if (this.isSignificantChange(save)) {
+                await this.createVersionSnapshot(save);
+            }
+            
+            // Emit save success event
+            this.eventEmitter.emit('note:auto-saved', save.noteId);
+            
+        } catch (error) {
+            // Handle save failure gracefully
+            this.logger.error('Auto-save failed', { noteId: save.noteId, error });
+            this.eventEmitter.emit('note:save-failed', save.noteId, error);
+            
+            // Retry with exponential backoff
+            await this.scheduleRetry(save);
+        }
+    }
+    
+    private isSignificantChange(save: SaveOperation): boolean {
+        // Create version snapshot for significant changes
+        const wordCountDiff = this.calculateWordCountDiff(save);
+        const timeSinceLastVersion = this.getTimeSinceLastVersion(save.noteId);
+        
+        return wordCountDiff > 50 || timeSinceLastVersion > 3600000; // 1 hour
+    }
+}
+
+interface SaveOperation {
+    noteId: number;
+    content: string;
+    title: string;
+    timestamp: number;
+    contentHash: string;
+}
+```
+
 ## Error Handling & Resilience
 
 ### Comprehensive Error Management Strategy
@@ -576,8 +773,14 @@ class AIServiceManager {
     private circuitBreaker = new CircuitBreaker();
     private contextManager = new AIContextManager();
     private fallbackService = new LocalAIFallback();
+    private keyManager = new SecureKeyManager();
     
     async processRequest(request: AIRequest): Promise<AIResponse> {
+        // Check if AI is configured
+        if (!this.isAIConfigured()) {
+            return this.handleNoAIConfiguration(request);
+        }
+        
         // Check circuit breaker
         if (this.circuitBreaker.isOpen()) {
             return this.fallbackService.process(request);
@@ -590,13 +793,48 @@ class AIServiceManager {
         } catch (error) {
             this.circuitBreaker.recordFailure();
             
-            // Intelligent fallback based on request type
-            if (request.type === 'todo_extraction') {
-                return this.fallbackService.extractTodos(request.content);
-            }
-            
-            throw new AIServiceError('AI service unavailable', error);
+            // Graceful degradation
+            return this.handleAIFailure(request, error);
         }
+    }
+    
+    private handleNoAIConfiguration(request: AIRequest): AIResponse {
+        // Ensure all manual features work without AI
+        switch (request.type) {
+            case 'todo_extraction':
+                return { todos: [], message: 'AI not configured - manual todo creation available' };
+            case 'insights':
+                return { insights: [], message: 'AI not configured - manual analysis available' };
+            default:
+                return { success: true, message: 'Feature available in manual mode' };
+        }
+    }
+    
+    private handleAIFailure(request: AIRequest, error: Error): AIResponse {
+        // Intelligent fallback based on request type
+        if (request.type === 'todo_extraction') {
+            return this.fallbackService.extractTodos(request.content);
+        }
+        
+        // Log error but don't break core functionality
+        this.logger.warn('AI service unavailable, falling back to manual mode', error);
+        return { success: false, fallback: true, message: 'AI temporarily unavailable' };
+    }
+}
+
+class SecureKeyManager {
+    private keychain = require('keytar');
+    
+    async storeAPIKey(provider: 'openai' | 'gemini' | 'grok', key: string): Promise<void> {
+        await this.keychain.setPassword('notesage-ai', provider, key);
+    }
+    
+    async getAPIKey(provider: string): Promise<string | null> {
+        return await this.keychain.getPassword('notesage-ai', provider);
+    }
+    
+    async deleteAPIKey(provider: string): Promise<void> {
+        await this.keychain.deletePassword('notesage-ai', provider);
     }
 }
 ```
@@ -917,15 +1155,129 @@ class AccessibilityManager {
 ### Installation Flow
 
 **First Launch Setup:**
-1. Data directory selection
-2. Database initialization
-3. Migration execution
-4. Default configuration setup
-5. Optional AI provider configuration
+```typescript
+class FirstLaunchManager {
+    async initializeApplication(): Promise<void> {
+        try {
+            // Step 1: Data directory selection
+            const dataDirectory = await this.selectDataDirectory();
+            
+            // Step 2: Validate directory permissions
+            await this.validateDirectoryAccess(dataDirectory);
+            
+            // Step 3: Database initialization
+            await this.initializeDatabase(dataDirectory);
+            
+            // Step 4: Run initial migrations
+            await this.runDatabaseMigrations();
+            
+            // Step 5: Default configuration setup
+            await this.setupDefaultConfiguration();
+            
+            // Step 6: Optional AI provider configuration
+            await this.showAIConfigurationDialog();
+            
+        } catch (error) {
+            await this.handleSetupError(error);
+        }
+    }
+    
+    private async selectDataDirectory(): Promise<string> {
+        const { dialog } = require('electron');
+        const result = await dialog.showOpenDialog({
+            properties: ['openDirectory', 'createDirectory'],
+            title: 'Select Data Directory for NoteSage',
+            message: 'Choose where to store your notes and data',
+            defaultPath: path.join(os.homedir(), 'NoteSage')
+        });
+        
+        if (result.canceled) {
+            throw new Error('Data directory selection canceled');
+        }
+        
+        return result.filePaths[0];
+    }
+    
+    private async validateDirectoryAccess(directory: string): Promise<void> {
+        try {
+            // Test write permissions
+            const testFile = path.join(directory, '.write-test');
+            await fs.writeFile(testFile, 'test');
+            await fs.unlink(testFile);
+        } catch (error) {
+            throw new Error(`Directory not writable: ${directory}. Please select a different location.`);
+        }
+    }
+    
+    private async handleSetupError(error: Error): Promise<void> {
+        const { dialog } = require('electron');
+        
+        const troubleshootingGuide = this.generateTroubleshootingGuide(error);
+        
+        await dialog.showErrorBox(
+            'Setup Failed',
+            `${error.message}\n\nTroubleshooting:\n${troubleshootingGuide}`
+        );
+        
+        // Offer to retry or exit
+        const choice = await dialog.showMessageBox({
+            type: 'error',
+            buttons: ['Retry Setup', 'Exit Application'],
+            defaultId: 0,
+            message: 'Setup failed. Would you like to try again?'
+        });
+        
+        if (choice.response === 0) {
+            await this.initializeApplication();
+        } else {
+            app.quit();
+        }
+    }
+}
+```
+
+**Database Relocation System:**
+```typescript
+class DatabaseManager {
+    async relocateDatabase(newPath: string): Promise<void> {
+        const currentPath = this.getCurrentDatabasePath();
+        
+        try {
+            // Step 1: Validate new location
+            await this.validateDirectoryAccess(newPath);
+            
+            // Step 2: Close current database connections
+            await this.closeAllConnections();
+            
+            // Step 3: Copy database file safely
+            const newDbPath = path.join(newPath, 'notesage.db');
+            await fs.copyFile(currentPath, newDbPath);
+            
+            // Step 4: Verify integrity of copied database
+            await this.verifyDatabaseIntegrity(newDbPath);
+            
+            // Step 5: Update configuration
+            await this.updateDatabasePath(newDbPath);
+            
+            // Step 6: Remove old database file
+            await fs.unlink(currentPath);
+            
+            // Step 7: Reconnect to new database
+            await this.initializeDatabase(newDbPath);
+            
+        } catch (error) {
+            // Rollback on failure
+            await this.rollbackRelocation(currentPath);
+            throw new Error(`Database relocation failed: ${error.message}`);
+        }
+    }
+}
+```
 
 **Update Process:**
-1. Background update checking
-2. User notification
-3. Download and verification
-4. Installation with restart
-5. Migration execution if needed
+1. Background update checking with user notification
+2. Download and cryptographic verification
+3. Installation with automatic restart
+4. Database migration execution if needed
+5. Configuration migration and validation
+6. Rollback capability if update fails

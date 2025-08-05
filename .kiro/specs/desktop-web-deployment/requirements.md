@@ -36,8 +36,8 @@ This feature enables NoteSage to run as a native desktop application, providing 
 22. WHEN the user exports notes THEN the system SHALL support export to PDF, Markdown, and HTML formats
 23. WHEN the user tracks changes THEN the system SHALL maintain version history for notes
 24. Note should have categories field, with support to add custom categories. Default categories should be Note & Meeting.
-25. System should allow to store notes in hierarchical / directory structure.
-26. WHEN the user saves a note THEN the system SHALL automatically save changes to the locally hosted storage.
+25. System should allow to organize notes in hierarchical folder structure through database relationships.
+26. WHEN the user saves a note THEN the system SHALL automatically save changes to the cloud database with local cache for offline access.
 27. WHEN the user views a note THEN the system SHALL open note to edit. View to edit should be the setting and readonly notes are not needed.
 28. IF the user mentions a person or note THEN the system SHALL create a connection between the note and that person
 29. On given note User should be able to see list of other notes and their edit times from which this note is referred.
@@ -104,15 +104,15 @@ This feature enables NoteSage to run as a native desktop application, providing 
 
 ### Requirement 6
 
-**User Story:** As a user, I want to configure where my data is stored, so that I can control the location of my database files and easily manage backups.
+**User Story:** As a user, I want to configure my data storage and backup preferences, so that I can control how my data is stored and synchronized across devices.
 
 #### Acceptance Criteria
 
-1. WHEN the user first launches the application THEN the system SHALL allow the user to choose a data directory location
-2. WHEN the user selects a data directory THEN the system SHALL store the SQLite database file in that location
-3. WHEN the user wants to change the data directory THEN the system SHALL provide a settings option to relocate the database
-4. WHEN relocating the database THEN the system SHALL safely move the existing database file to the new location
-5. IF the selected directory is not writable THEN the system SHALL display an error and prompt for a different location
+1. WHEN the user first launches the application THEN the system SHALL connect to cloud storage and create local cache for offline access
+2. WHEN the user configures sync settings THEN the system SHALL allow controlling sync frequency and offline cache size
+3. WHEN the user wants to backup data THEN the system SHALL provide export functionality to standard formats
+4. WHEN the user works offline THEN the system SHALL queue changes and sync when connection is restored
+5. IF cloud connection fails THEN the system SHALL continue working with local cache and display connection status
 
 ### Requirement 7
 

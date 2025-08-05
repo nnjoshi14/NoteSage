@@ -119,299 +119,372 @@ graph TB
 - Shared business logic through standardized APIs
 - Feature parity across platforms where possible
 
-### Storage Strategy
+### Cloud-First Storage Strategy
 
-**Desktop Storage (Current):**
-- **Markdown Files (.md)**: Note content in hierarchical folder structure
-- **YAML frontmatter**: Basic metadata (title, category, tags, dates)
-- **Embedded todos**: `- [ ][t1] Task text @person date` format
-- **Direct file access**: Users can edit with external editors
-- **Version control ready**: Git integration possible
-- **SQLite Database**: Metadata, relationships, search indexes, AI results
+**Primary Storage: Cloud Database**
+- **PostgreSQL/Cloud SQL**: Primary data storage for all platforms
+- **Structured data**: Notes, todos, people, relationships stored as database records
+- **Rich content**: Note content stored as structured JSON/HTML for rich editing
+- **Real-time sync**: Immediate synchronization across all connected devices
+- **Scalable search**: Full-text search with database indexes
+- **ACID transactions**: Data consistency and integrity guaranteed
 
-**Future Cloud Storage:**
-- **Cloud file storage**: Synchronized markdown files
-- **Cloud database**: Shared metadata and relationships
-- **Hybrid sync**: Desktop maintains local files + cloud backup
-- **Conflict resolution**: Merge strategies for simultaneous edits
-- **Offline-first**: Desktop continues working without internet
+**Desktop Offline Cache: SQLite Mirror**
+- **Local SQLite cache**: Complete mirror of user's cloud data
+- **Offline-first UX**: All operations work offline with local cache
+- **Background sync**: Automatic synchronization when online
+- **Conflict resolution**: Simple last-write-wins with user override option
+- **Selective sync**: Option to cache only recent/important data
 
-**Cross-Platform Data Models:**
-- **Standardized APIs**: Same data models across all platforms
-- **Platform-agnostic business logic**: Core functionality shared
-- **Platform-specific optimizations**: UI and storage optimized per platform
+**Cross-Platform Consistency:**
+- **Same data model**: Identical database schema across all platforms
+- **Unified APIs**: RESTful APIs work consistently for all clients
+- **Real-time updates**: WebSocket connections for live collaboration
+- **Optimistic updates**: UI updates immediately, syncs in background
 
-### File Structure Example
+**Data Export/Portability:**
+- **Export functionality**: Export to markdown, JSON, or other formats
+- **Backup options**: Regular automated backups of user data
+- **Import capabilities**: Import from other note-taking applications
+- **Data ownership**: Users can export their complete dataset anytime
 
+### Database Schema Structure
+
+**Cloud Database (PostgreSQL):**
+```sql
+-- Notes table with rich content
+CREATE TABLE notes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    title TEXT NOT NULL,
+    content JSONB NOT NULL, -- Rich content as structured JSON
+    category TEXT DEFAULT 'Note',
+    tags TEXT[] DEFAULT '{}',
+    folder_path TEXT DEFAULT '/',
+    scheduled_date TIMESTAMPTZ,
+    is_archived BOOLEAN DEFAULT FALSE,
+    is_pinned BOOLEAN DEFAULT FALSE,
+    is_favorite BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    version INTEGER DEFAULT 1
+);
+
+-- Todos with unique IDs
+CREATE TABLE todos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    note_id UUID NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    todo_id TEXT NOT NULL, -- e.g., "t1", "t2"
+    text TEXT NOT NULL,
+    is_completed BOOLEAN DEFAULT FALSE,
+    assigned_person_id UUID REFERENCES people(id),
+    due_date DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(note_id, todo_id)
+);
+
+-- People management
+CREATE TABLE people (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    company TEXT,
+    title TEXT,
+    linkedin_url TEXT,
+    avatar_url TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
-/data-directory/
-├── notes/
-│   ├── meetings/
-│   │   ├── 2024-01-15-team-standup.md
-│   │   └── 2024-01-16-client-review.md
-│   ├── projects/
-│   │   ├── project-alpha/
-│   │   │   ├── requirements.md
-│   │   │   └── design-notes.md
-│   │   └── project-beta.md
-│   └── personal/
-│       ├── daily-notes/
-│       │   ├── 2024-01-15.md
-│       │   └── 2024-01-16.md
-│       └── ideas.md
-├── templates/
-│   ├── meeting-template.md
-│   ├── project-template.md
-│   └── daily-template.md
-├── archive/
-│   └── old-notes/
-└── database.db
+
+**Desktop Cache (SQLite):**
+```sql
+-- Identical schema to cloud database for consistency
+-- Additional sync metadata
+CREATE TABLE sync_metadata (
+    table_name TEXT PRIMARY KEY,
+    last_sync DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sync_token TEXT
+);
+
+CREATE TABLE offline_queue (
+    id INTEGER PRIMARY KEY,
+    operation TEXT NOT NULL, -- 'create', 'update', 'delete'
+    table_name TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    data TEXT, -- JSON
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-### Note File Format
+### Note Content Structure
 
-```markdown
----
-title: "Team Standup - January 15, 2024"
-category: "Meeting"
-tags: ["team", "standup", "project-alpha"]
-created: 2024-01-15T09:00:00Z
-modified: 2024-01-15T10:30:00Z
-scheduled: 2024-01-15T09:00:00Z
----
-
-# Team Standup - January 15, 2024
-
-## Attendees
-- @John Smith
-- @Sarah Johnson
-- @Mike Davis
-
-## Discussion Points
-
-### Project Alpha Updates
-- [x][t1] Complete API documentation @John Smith 2024-01-14
-- [ ][t2] Review security requirements @Sarah Johnson 2024-01-16
-- [ ][t3] Setup testing environment @Mike Davis 2024-01-17
-
-### Action Items
-- [ ][t4] Schedule client demo @John Smith next week
-- [ ][t5] Update project timeline #Project Alpha Planning
-
-## Notes
-The team discussed progress on #Project Alpha and identified key blockers.
-Need to follow up with @Client Representative about requirements.
-
-## Mermaid Diagram
-```mermaid
-graph LR
-    A[Requirements] --> B[Design]
-    B --> C[Implementation]
-    C --> D[Testing]
-```
+**Rich Content JSON Format:**
+```json
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "heading",
+      "attrs": { "level": 1 },
+      "content": [{ "type": "text", "text": "Team Standup - January 15, 2024" }]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "Attendees: " },
+        { "type": "mention", "attrs": { "type": "person", "id": "john-smith" } },
+        { "type": "text", "text": ", " },
+        { "type": "mention", "attrs": { "type": "person", "id": "sarah-johnson" } }
+      ]
+    },
+    {
+      "type": "todo",
+      "attrs": { "todoId": "t1", "completed": true, "assignedTo": "john-smith", "dueDate": "2024-01-14" },
+      "content": [{ "type": "text", "text": "Complete API documentation" }]
+    },
+    {
+      "type": "mermaid",
+      "attrs": { "code": "graph LR\n    A[Requirements] --> B[Design]" }
+    }
+  ]
+}
 ```
 
 ## Components and Interfaces
 
 ### Core Components
 
-#### 1. File Management System
+#### 1. Cloud Sync Manager
 
-**File Manager Service:**
+**Cloud Sync Service:**
 ```typescript
-class FileManager {
-    private dataDirectory: string;
-    private notesDirectory: string;
-    private templatesDirectory: string;
-    private archiveDirectory: string;
+class CloudSyncManager {
+    private cloudAPI: CloudAPI;
+    private localCache: SQLiteCache;
+    private offlineQueue: OfflineQueue;
+    private isOnline: boolean = true;
     
-    constructor(dataDirectory: string) {
-        this.dataDirectory = dataDirectory;
-        this.notesDirectory = path.join(dataDirectory, 'notes');
-        this.templatesDirectory = path.join(dataDirectory, 'templates');
-        this.archiveDirectory = path.join(dataDirectory, 'archive');
+    constructor() {
+        this.cloudAPI = new CloudAPI();
+        this.localCache = new SQLiteCache();
+        this.offlineQueue = new OfflineQueue();
+        this.setupConnectionMonitoring();
     }
     
-    async createNote(folderPath: string, title: string, content: string, metadata: NoteMetadata): Promise<string> {
-        const fileName = this.sanitizeFileName(title) + '.md';
-        const fullPath = path.join(this.notesDirectory, folderPath, fileName);
+    async createNote(note: CreateNoteRequest): Promise<Note> {
+        // Always update local cache first (optimistic update)
+        const localNote = await this.localCache.createNote(note);
         
-        // Ensure directory exists
-        await fs.ensureDir(path.dirname(fullPath));
-        
-        // Create markdown content with frontmatter
-        const markdownContent = this.createMarkdownWithFrontmatter(content, metadata);
-        
-        // Write file
-        await fs.writeFile(fullPath, markdownContent, 'utf8');
-        
-        return fullPath;
+        if (this.isOnline) {
+            try {
+                // Sync to cloud immediately
+                const cloudNote = await this.cloudAPI.createNote(note);
+                await this.localCache.updateNote(cloudNote.id, cloudNote);
+                return cloudNote;
+            } catch (error) {
+                // Queue for later sync if cloud fails
+                await this.offlineQueue.enqueue('create', 'notes', localNote);
+                return localNote;
+            }
+        } else {
+            // Queue for sync when online
+            await this.offlineQueue.enqueue('create', 'notes', localNote);
+            return localNote;
+        }
     }
     
-    async readNote(filePath: string): Promise<{ content: string; metadata: NoteMetadata }> {
-        const rawContent = await fs.readFile(filePath, 'utf8');
-        return this.parseMarkdownWithFrontmatter(rawContent);
-    }
-    
-    async updateNote(filePath: string, content: string, metadata: NoteMetadata): Promise<void> {
-        const markdownContent = this.createMarkdownWithFrontmatter(content, metadata);
-        await fs.writeFile(filePath, markdownContent, 'utf8');
+    async updateNote(noteId: string, updates: UpdateNoteRequest): Promise<Note> {
+        // Update local cache immediately
+        const localNote = await this.localCache.updateNote(noteId, updates);
         
-        // Update modification time in database
-        await this.updateFileMetadata(filePath, {
-            modified: new Date(),
-            size: markdownContent.length
-        });
+        if (this.isOnline) {
+            try {
+                const cloudNote = await this.cloudAPI.updateNote(noteId, updates);
+                await this.localCache.updateNote(noteId, cloudNote);
+                return cloudNote;
+            } catch (error) {
+                await this.offlineQueue.enqueue('update', 'notes', localNote);
+                return localNote;
+            }
+        } else {
+            await this.offlineQueue.enqueue('update', 'notes', localNote);
+            return localNote;
+        }
     }
     
-    async moveNote(oldPath: string, newPath: string): Promise<void> {
-        await fs.ensureDir(path.dirname(newPath));
-        await fs.move(oldPath, newPath);
+    async syncPendingChanges(): Promise<SyncResult> {
+        if (!this.isOnline) return { success: false, reason: 'offline' };
         
-        // Update database references
-        await this.updateFilePathReferences(oldPath, newPath);
-    }
-    
-    async archiveNote(filePath: string): Promise<string> {
-        const relativePath = path.relative(this.notesDirectory, filePath);
-        const archivePath = path.join(this.archiveDirectory, relativePath);
+        const pendingOperations = await this.offlineQueue.getAllPending();
+        const results: SyncResult = { synced: 0, failed: 0, conflicts: 0 };
         
-        await fs.ensureDir(path.dirname(archivePath));
-        await fs.move(filePath, archivePath);
+        for (const operation of pendingOperations) {
+            try {
+                await this.syncOperation(operation);
+                await this.offlineQueue.markCompleted(operation.id);
+                results.synced++;
+            } catch (error) {
+                if (this.isConflictError(error)) {
+                    await this.handleConflict(operation, error);
+                    results.conflicts++;
+                } else {
+                    results.failed++;
+                }
+            }
+        }
         
-        return archivePath;
+        return results;
     }
     
-    private createMarkdownWithFrontmatter(content: string, metadata: NoteMetadata): string {
-        const frontmatter = yaml.dump(metadata);
-        return `---\n${frontmatter}---\n\n${content}`;
-    }
-    
-    private parseMarkdownWithFrontmatter(rawContent: string): { content: string; metadata: NoteMetadata } {
-        const { data: metadata, content } = matter(rawContent);
-        return { content, metadata: metadata as NoteMetadata };
+    private async handleConflict(operation: OfflineOperation, error: ConflictError): Promise<void> {
+        // Simple conflict resolution: show user both versions
+        const resolution = await this.showConflictResolution(operation, error);
+        
+        switch (resolution.strategy) {
+            case 'keep_local':
+                await this.cloudAPI.forceUpdate(operation.recordId, operation.data);
+                break;
+            case 'keep_remote':
+                await this.localCache.updateFromCloud(operation.recordId, error.remoteData);
+                break;
+            case 'merge':
+                const merged = await this.mergeData(operation.data, error.remoteData);
+                await this.cloudAPI.updateNote(operation.recordId, merged);
+                await this.localCache.updateNote(operation.recordId, merged);
+                break;
+        }
     }
 }
 ```
 
 #### 2. Todo Management System
 
-**Todo Sync Manager with ID-based System:**
+**Database-First Todo Manager:**
 ```typescript
-class TodoSyncManager {
-    private todoPattern = /- \[([ x])\]\[([t]\d+)\] (.+)/g;
-    private database: Database;
-    private fileManager: FileManager;
+class TodoManager {
+    private cloudSync: CloudSyncManager;
+    private localCache: SQLiteCache;
     
-    async scanNoteForTodos(filePath: string): Promise<Todo[]> {
-        const { content } = await this.fileManager.readNote(filePath);
-        const todos: Todo[] = [];
-        let match;
+    async createTodo(noteId: string, text: string, assignedPersonId?: string, dueDate?: Date): Promise<Todo> {
+        // Generate next todo ID for the note
+        const todoId = await this.generateNextTodoId(noteId);
         
-        // Reset regex lastIndex
-        this.todoPattern.lastIndex = 0;
-        
-        while ((match = this.todoPattern.exec(content)) !== null) {
-            const isCompleted = match[1] === 'x';
-            const todoId = match[2]; // e.g., "t1", "t2"
-            const todoText = match[3];
-            
-            // Parse @person and date from todo text
-            const { text, person, date } = this.parseTodoContent(todoText);
-            
-            todos.push({
-                id: `${filePath}:${todoId}`, // Composite ID
-                todoId: todoId,
-                filePath: filePath,
-                text: text,
-                isCompleted: isCompleted,
-                assignedPerson: person,
-                dueDate: date,
-                rawText: match[0]
-            });
-        }
-        
-        return todos;
-    }
-    
-    async updateTodoStatus(compositeId: string, isCompleted: boolean): Promise<void> {
-        const [filePath, todoId] = compositeId.split(':');
-        
-        // Read current file content
-        const { content, metadata } = await this.fileManager.readNote(filePath);
-        
-        // Update the specific todo
-        const updatedContent = this.updateTodoInContent(content, todoId, isCompleted);
-        
-        // Write back to file
-        await this.fileManager.updateNote(filePath, updatedContent, {
-            ...metadata,
-            modified: new Date()
-        });
-        
-        // Update database reference
-        await this.updateTodoInDatabase(compositeId, isCompleted);
-    }
-    
-    async manualSync(): Promise<SyncResult> {
-        const result: SyncResult = {
-            scannedFiles: 0,
-            updatedTodos: 0,
-            newTodos: 0,
-            deletedTodos: 0
+        const todo: CreateTodoRequest = {
+            noteId,
+            todoId,
+            text,
+            isCompleted: false,
+            assignedPersonId,
+            dueDate
         };
         
-        // Get all notes that have been modified since last scan
-        const modifiedNotes = await this.getModifiedNotes();
+        // Create through cloud sync (handles offline/online automatically)
+        const createdTodo = await this.cloudSync.createTodo(todo);
         
-        for (const noteInfo of modifiedNotes) {
-            const todos = await this.scanNoteForTodos(noteInfo.filePath);
-            
-            // Compare with existing todos in database
-            const existingTodos = await this.getTodosForNote(noteInfo.filePath);
-            
-            // Update database with changes
-            await this.syncTodosToDatabase(noteInfo.filePath, todos, existingTodos);
-            
-            // Update last scan timestamp
-            await this.updateLastScanTime(noteInfo.filePath);
-            
-            result.scannedFiles++;
+        // Update note content to include the todo
+        await this.updateNoteWithTodo(noteId, createdTodo);
+        
+        return createdTodo;
+    }
+    
+    async updateTodoStatus(todoId: string, isCompleted: boolean): Promise<Todo> {
+        // Update todo in database
+        const updatedTodo = await this.cloudSync.updateTodo(todoId, { isCompleted });
+        
+        // Update note content to reflect the change
+        await this.updateNoteWithTodo(updatedTodo.noteId, updatedTodo);
+        
+        return updatedTodo;
+    }
+    
+    async getTodosForNote(noteId: string): Promise<Todo[]> {
+        // Get from local cache first (fast)
+        return await this.localCache.getTodosByNoteId(noteId);
+    }
+    
+    async getAllTodos(filters?: TodoFilters): Promise<Todo[]> {
+        let query = this.localCache.query('todos');
+        
+        if (filters?.isCompleted !== undefined) {
+            query = query.where('is_completed', filters.isCompleted);
         }
         
-        return result;
+        if (filters?.assignedPersonId) {
+            query = query.where('assigned_person_id', filters.assignedPersonId);
+        }
+        
+        if (filters?.dueDateRange) {
+            query = query.whereBetween('due_date', [
+                filters.dueDateRange.start,
+                filters.dueDateRange.end
+            ]);
+        }
+        
+        return await query.orderBy('created_at', 'desc');
     }
     
-    private updateTodoInContent(content: string, todoId: string, isCompleted: boolean): string {
-        const checkbox = isCompleted ? '[x]' : '[ ]';
-        const pattern = new RegExp(`- \\[([ x])\\]\\[${todoId}\\]`, 'g');
-        
-        return content.replace(pattern, `- ${checkbox}[${todoId}]`);
+    async syncTodos(): Promise<SyncResult> {
+        // Manual sync trigger - sync all pending todo changes
+        return await this.cloudSync.syncPendingChanges('todos');
     }
     
-    private parseTodoContent(todoText: string): { text: string; person?: string; date?: Date } {
-        // Extract @person mentions
-        const personMatch = todoText.match(/@([^@\s]+(?:\s+[^@\s]+)*)/);
-        const person = personMatch ? personMatch[1] : undefined;
+    private async generateNextTodoId(noteId: string): Promise<string> {
+        const existingTodos = await this.getTodosForNote(noteId);
+        const existingIds = existingTodos
+            .map(t => parseInt(t.todoId.substring(1))) // Remove 't' prefix
+            .filter(id => !isNaN(id));
         
-        // Extract dates (various formats)
-        const dateMatch = todoText.match(/(\d{4}-\d{2}-\d{2}|next week|tomorrow|today)/i);
-        const date = dateMatch ? this.parseDate(dateMatch[1]) : undefined;
-        
-        // Clean text (remove @person and date)
-        let cleanText = todoText
-            .replace(/@([^@\s]+(?:\s+[^@\s]+)*)/, '')
-            .replace(/(\d{4}-\d{2}-\d{2}|next week|tomorrow|today)/i, '')
-            .trim();
-        
-        return { text: cleanText, person, date };
-    }
-    
-    async generateNextTodoId(filePath: string): Promise<string> {
-        const existingTodos = await this.getTodosForNote(filePath);
-        const existingIds = existingTodos.map(t => parseInt(t.todoId.substring(1))); // Remove 't' prefix
         const nextId = Math.max(0, ...existingIds) + 1;
         return `t${nextId}`;
+    }
+    
+    private async updateNoteWithTodo(noteId: string, todo: Todo): Promise<void> {
+        // Update the note's content to reflect todo changes
+        const note = await this.localCache.getNote(noteId);
+        const updatedContent = this.updateTodoInNoteContent(note.content, todo);
+        
+        await this.cloudSync.updateNote(noteId, { content: updatedContent });
+    }
+    
+    private updateTodoInNoteContent(content: any, todo: Todo): any {
+        // Find and update the todo in the structured content
+        return this.traverseContent(content, (node) => {
+            if (node.type === 'todo' && node.attrs?.todoId === todo.todoId) {
+                return {
+                    ...node,
+                    attrs: {
+                        ...node.attrs,
+                        completed: todo.isCompleted,
+                        assignedTo: todo.assignedPersonId,
+                        dueDate: todo.dueDate
+                    }
+                };
+            }
+            return node;
+        });
+    }
+    
+    private traverseContent(content: any, transformer: (node: any) => any): any {
+        if (Array.isArray(content)) {
+            return content.map(item => this.traverseContent(item, transformer));
+        }
+        
+        if (content && typeof content === 'object') {
+            const transformed = transformer(content);
+            
+            if (transformed.content) {
+                transformed.content = this.traverseContent(transformed.content, transformer);
+            }
+            
+            return transformed;
+        }
+        
+        return content;
     }
 }
 ```

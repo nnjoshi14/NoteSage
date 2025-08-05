@@ -381,6 +381,66 @@ CREATE TABLE offline_queue (
 
 ### Core Components
 
+#### 0. Desktop Client Architecture
+
+**Electron Application Structure:**
+```
+Desktop Client/
+├── main/                    # Electron main process
+│   ├── main.js             # Application entry point
+│   ├── server-manager.js   # Server connection management
+│   ├── offline-cache.js    # Local SQLite cache
+│   └── sync-manager.js     # Sync with server
+├── renderer/               # Electron renderer process
+│   ├── components/         # React/Vue components
+│   ├── services/          # API client services
+│   ├── stores/            # State management
+│   └── utils/             # Utility functions
+└── shared/                # Shared types and constants
+```
+
+**Server Connection Management:**
+```typescript
+class ServerConnectionManager {
+    private connections: Map<string, ServerConnection> = new Map();
+    private activeConnection: ServerConnection | null = null;
+    
+    async connectToServer(profile: ServerProfile): Promise<void> {
+        const connection = new ServerConnection(profile);
+        await connection.authenticate();
+        this.connections.set(profile.id, connection);
+        this.activeConnection = connection;
+    }
+    
+    async switchServer(profileId: string): Promise<void> {
+        const connection = this.connections.get(profileId);
+        if (connection) {
+            this.activeConnection = connection;
+            await this.syncManager.syncWithNewServer(connection);
+        }
+    }
+}
+```
+
+**Offline Cache System:**
+```typescript
+class OfflineCache {
+    private db: SQLiteDatabase;
+    
+    async cacheNote(note: Note): Promise<void> {
+        await this.db.run(`
+            INSERT OR REPLACE INTO cached_notes 
+            (id, title, content, updated_at, server_id) 
+            VALUES (?, ?, ?, ?, ?)
+        `, [note.id, note.title, note.content, note.updatedAt, this.serverId]);
+    }
+    
+    async getOfflineNotes(): Promise<Note[]> {
+        return await this.db.all('SELECT * FROM cached_notes ORDER BY updated_at DESC');
+    }
+}
+```
+
 #### 1. Cloud Sync Manager
 
 **Cloud Sync Service:**
@@ -611,18 +671,45 @@ class TodoManager {
 }
 ```
 
-#### 3. Rich Text Editor Component
+#### 1. Rich Text Editor Component
 
-**Editor with Slash Commands and Auto-completion:**
+**Editor Architecture (TipTap/ProseMirror-based):**
 ```typescript
 class RichTextEditor {
     private editor: Editor;
     private slashCommands: SlashCommand[];
     private autoCompleteProviders: AutoCompleteProvider[];
+    private versionHistory: VersionHistoryManager;
     
     constructor() {
+        this.initializeEditor();
         this.initializeSlashCommands();
         this.initializeAutoComplete();
+        this.versionHistory = new VersionHistoryManager();
+    }
+    
+    private initializeEditor(): void {
+        this.editor = new Editor({
+            extensions: [
+                StarterKit,
+                Table.configure({ resizable: true }),
+                CodeBlockLowlight.configure({ lowlight }),
+                Image,
+                Link,
+                Mention.configure({
+                    HTMLAttributes: { class: 'mention' },
+                    suggestion: this.mentionSuggestion
+                }),
+                TaskList,
+                TaskItem.configure({ nested: true }),
+                Collaboration.configure({ document: this.ydoc }),
+                CollaborationCursor.configure({ provider: this.provider })
+            ],
+            content: this.initialContent,
+            onUpdate: ({ editor }) => {
+                this.handleContentChange(editor.getJSON());
+            }
+        });
     }
     
     private initializeSlashCommands(): void {
@@ -630,31 +717,37 @@ class RichTextEditor {
             {
                 trigger: '/table',
                 description: 'Insert table',
+                icon: 'table',
                 action: () => this.insertTable()
             },
             {
                 trigger: '/code',
                 description: 'Insert code block',
+                icon: 'code',
                 action: () => this.insertCodeBlock()
             },
             {
                 trigger: '/callout',
                 description: 'Insert callout block',
+                icon: 'info',
                 action: () => this.insertCallout()
             },
             {
                 trigger: '/mermaid',
                 description: 'Insert mermaid diagram',
+                icon: 'diagram',
                 action: () => this.insertMermaidDiagram()
             },
             {
                 trigger: '/todo',
                 description: 'Insert todo item',
+                icon: 'check',
                 action: () => this.insertTodo()
             },
             {
                 trigger: '/template',
                 description: 'Insert template',
+                icon: 'template',
                 action: () => this.showTemplateSelector()
             }
         ];
@@ -670,105 +763,436 @@ class RichTextEditor {
     }
     
     async insertTodo(): Promise<void> {
-        const nextId = await this.todoManager.generateNextTodoId(this.currentFilePath);
-        const todoTemplate = `- [ ][${nextId}] `;
+        const nextId = await this.todoManager.generateNextTodoId(this.currentNoteId);
+        const todoNode = {
+            type: 'taskItem',
+            attrs: { 
+                todoId: nextId,
+                checked: false 
+            },
+            content: [{ type: 'paragraph' }]
+        };
         
-        this.editor.insertText(todoTemplate);
-        this.editor.focus();
+        this.editor.chain().focus().insertContent(todoNode).run();
     }
     
-    private handleSlashCommand(command: string): void {
-        const matchedCommand = this.slashCommands.find(cmd => 
-            cmd.trigger.toLowerCase().startsWith(command.toLowerCase())
+    // Version History Management
+    async saveVersion(content: any, changeDescription?: string): Promise<void> {
+        await this.versionHistory.saveVersion({
+            noteId: this.currentNoteId,
+            content: content,
+            description: changeDescription || 'Auto-save',
+            timestamp: new Date()
+        });
+    }
+    
+    async showVersionHistory(): Promise<void> {
+        const versions = await this.versionHistory.getVersions(this.currentNoteId);
+        this.versionHistoryModal.show(versions);
+    }
+    
+    // Export Functionality
+    async exportNote(format: 'pdf' | 'markdown' | 'html'): Promise<void> {
+        const content = this.editor.getJSON();
+        
+        switch (format) {
+            case 'markdown':
+                const markdown = this.convertToMarkdown(content);
+                await this.downloadFile(`${this.noteTitle}.md`, markdown);
+                break;
+            case 'html':
+                const html = this.editor.getHTML();
+                await this.downloadFile(`${this.noteTitle}.html`, html);
+                break;
+            case 'pdf':
+                await this.generatePDF(content);
+                break;
+        }
+    }
+}
+
+// Template System
+class TemplateManager {
+    async createTemplate(name: string, content: any, category: string): Promise<Template> {
+        const template: Template = {
+            id: generateUUID(),
+            name,
+            content,
+            category,
+            variables: this.extractVariables(content),
+            createdAt: new Date()
+        };
+        
+        await this.apiClient.post('/api/templates', template);
+        return template;
+    }
+    
+    async applyTemplate(templateId: string, variables: Record<string, string>): Promise<any> {
+        const template = await this.apiClient.get(`/api/templates/${templateId}`);
+        return this.replaceVariables(template.content, variables);
+    }
+    
+    private extractVariables(content: any): string[] {
+        // Extract {{variable}} patterns from content
+        const variables: string[] = [];
+        const variableRegex = /\{\{(\w+)\}\}/g;
+        const contentStr = JSON.stringify(content);
+        let match;
+        
+        while ((match = variableRegex.exec(contentStr)) !== null) {
+            if (!variables.includes(match[1])) {
+                variables.push(match[1]);
+            }
+        }
+        
+        return variables;
+    }
+}
+```
+```
+
+#### 3. Knowledge Graph Component
+
+**D3.js-based Graph Visualization:**
+```typescript
+class KnowledgeGraph {
+    private svg: d3.Selection<SVGSVGElement, unknown, null, undefined>;
+    private simulation: d3.Simulation<GraphNode, GraphLink>;
+    private nodes: GraphNode[] = [];
+    private links: GraphLink[] = [];
+    private searchFilter: string = '';
+    
+    constructor(container: HTMLElement) {
+        this.initializeVisualization(container);
+        this.setupSimulation();
+        this.setupEventHandlers();
+    }
+    
+    private initializeVisualization(container: HTMLElement): void {
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        
+        this.svg = d3.select(container)
+            .append('svg')
+            .attr('width', width)
+            .attr('height', height)
+            .call(d3.zoom().on('zoom', this.handleZoom.bind(this)));
+    }
+    
+    private setupSimulation(): void {
+        this.simulation = d3.forceSimulation<GraphNode>()
+            .force('link', d3.forceLink<GraphNode, GraphLink>().id(d => d.id))
+            .force('charge', d3.forceManyBody().strength(-300))
+            .force('center', d3.forceCenter(400, 300))
+            .force('collision', d3.forceCollide().radius(30));
+    }
+    
+    async loadGraphData(): Promise<void> {
+        try {
+            const graphData = await this.apiClient.get('/api/graph');
+            this.nodes = graphData.nodes;
+            this.links = graphData.links;
+            this.updateVisualization();
+        } catch (error) {
+            console.error('Failed to load graph data:', error);
+            this.showEmptyState();
+        }
+    }
+    
+    private updateVisualization(): void {
+        // Filter nodes and links based on search
+        const filteredNodes = this.searchFilter 
+            ? this.nodes.filter(n => n.title.toLowerCase().includes(this.searchFilter.toLowerCase()))
+            : this.nodes;
+        
+        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+        const filteredLinks = this.links.filter(l => 
+            filteredNodeIds.has(l.source as string) && filteredNodeIds.has(l.target as string)
         );
         
-        if (matchedCommand) {
-            matchedCommand.action();
+        // Update links
+        const linkSelection = this.svg.selectAll('.link')
+            .data(filteredLinks, d => `${d.source}-${d.target}`);
+        
+        linkSelection.exit().remove();
+        
+        const linkEnter = linkSelection.enter()
+            .append('line')
+            .attr('class', 'link')
+            .attr('stroke', '#999')
+            .attr('stroke-opacity', 0.6)
+            .attr('stroke-width', d => Math.sqrt(d.weight || 1));
+        
+        // Update nodes
+        const nodeSelection = this.svg.selectAll('.node')
+            .data(filteredNodes, d => d.id);
+        
+        nodeSelection.exit().remove();
+        
+        const nodeEnter = nodeSelection.enter()
+            .append('g')
+            .attr('class', 'node')
+            .call(this.drag());
+        
+        nodeEnter.append('circle')
+            .attr('r', d => this.getNodeSize(d))
+            .attr('fill', d => this.getNodeColor(d.type))
+            .on('click', this.handleNodeClick.bind(this));
+        
+        nodeEnter.append('text')
+            .attr('dy', '.35em')
+            .attr('text-anchor', 'middle')
+            .text(d => this.truncateText(d.title, 15))
+            .style('font-size', '12px')
+            .style('pointer-events', 'none');
+        
+        // Restart simulation
+        this.simulation.nodes(filteredNodes);
+        this.simulation.force<d3.ForceLink<GraphNode, GraphLink>>('link')!.links(filteredLinks);
+        this.simulation.restart();
+    }
+    
+    private handleNodeClick(event: MouseEvent, node: GraphNode): void {
+        // Show node details in sidebar
+        this.showNodeDetails(node);
+        
+        // Navigate to note/person if double-click
+        if (event.detail === 2) {
+            if (node.type === 'note') {
+                this.navigateToNote(node.id);
+            } else if (node.type === 'person') {
+                this.navigateToPerson(node.id);
+            }
+        }
+    }
+    
+    searchNodes(query: string): void {
+        this.searchFilter = query;
+        this.updateVisualization();
+    }
+    
+    private showEmptyState(): void {
+        this.svg.append('text')
+            .attr('x', '50%')
+            .attr('y', '50%')
+            .attr('text-anchor', 'middle')
+            .style('font-size', '18px')
+            .style('fill', '#666')
+            .text('No connections found. Start by mentioning people in your notes!');
+    }
+}
+```
+
+#### 4. AI Integration Service
+
+**AI Service with Multiple Providers:**
+```typescript
+class AIService {
+    private providers: Map<string, AIProvider> = new Map();
+    private activeProvider: AIProvider | null = null;
+    private secureStorage: SecureStorage;
+    
+    constructor() {
+        this.secureStorage = new SecureStorage();
+        this.initializeProviders();
+    }
+    
+    private initializeProviders(): void {
+        this.providers.set('openai', new OpenAIProvider());
+        this.providers.set('gemini', new GeminiProvider());
+        this.providers.set('grok', new GrokProvider());
+    }
+    
+    async configureProvider(providerName: string, apiKey: string): Promise<void> {
+        // Store API key securely in system keychain
+        await this.secureStorage.setItem(`ai_${providerName}_key`, apiKey);
+        
+        const provider = this.providers.get(providerName);
+        if (provider) {
+            provider.configure({ apiKey });
+            this.activeProvider = provider;
+        }
+    }
+    
+    async extractTodos(noteContent: string): Promise<ExtractedTodo[]> {
+        if (!this.activeProvider) {
+            return []; // Graceful degradation
+        }
+        
+        try {
+            const prompt = `
+                Extract actionable todos from the following note content. 
+                Return them in the format: "- [ ][t1] <task> @<person> <date>"
+                
+                Content: ${noteContent}
+            `;
+            
+            const response = await this.activeProvider.complete(prompt);
+            return this.parseTodoResponse(response);
+        } catch (error) {
+            console.warn('AI todo extraction failed:', error);
+            return []; // Graceful degradation
+        }
+    }
+    
+    async analyzeMentions(noteContent: string): Promise<PersonAnalysis[]> {
+        if (!this.activeProvider) {
+            return [];
+        }
+        
+        try {
+            const prompt = `
+                Analyze the following note content and identify:
+                1. People mentioned (extract names)
+                2. Their roles or relationships
+                3. Context of interaction
+                
+                Content: ${noteContent}
+            `;
+            
+            const response = await this.activeProvider.complete(prompt);
+            return this.parsePersonAnalysis(response);
+        } catch (error) {
+            console.warn('AI mention analysis failed:', error);
+            return [];
+        }
+    }
+    
+    async generateInsights(userNotes: Note[]): Promise<Insight[]> {
+        if (!this.activeProvider) {
+            return [];
+        }
+        
+        try {
+            const noteSummary = userNotes.slice(0, 50).map(n => 
+                `${n.title}: ${n.content.substring(0, 200)}...`
+            ).join('\n\n');
+            
+            const prompt = `
+                Analyze these notes and provide insights about:
+                1. Common themes and patterns
+                2. Frequently mentioned people and their relationships
+                3. Recurring topics or projects
+                4. Suggested connections between notes
+                
+                Notes: ${noteSummary}
+            `;
+            
+            const response = await this.activeProvider.complete(prompt);
+            return this.parseInsights(response);
+        } catch (error) {
+            console.warn('AI insight generation failed:', error);
+            return [];
+        }
+    }
+}
+
+// Secure Storage for API Keys
+class SecureStorage {
+    async setItem(key: string, value: string): Promise<void> {
+        // Use Electron's safeStorage API for secure key storage
+        const encrypted = safeStorage.encryptString(value);
+        await this.electronStore.set(key, encrypted);
+    }
+    
+    async getItem(key: string): Promise<string | null> {
+        const encrypted = await this.electronStore.get(key);
+        if (!encrypted) return null;
+        
+        try {
+            return safeStorage.decryptString(encrypted);
+        } catch (error) {
+            console.error('Failed to decrypt stored value:', error);
+            return null;
         }
     }
 }
 ```
 
-#### 4. Search Engine
+#### 5. Calendar View Component
 
-**Full-text Search with File and Database Integration:**
+**Calendar Integration with Todos and Notes:**
 ```typescript
-class SearchEngine {
-    private database: Database;
-    private fileManager: FileManager;
+class CalendarView {
+    private calendar: Calendar;
+    private todoManager: TodoManager;
+    private noteManager: NoteManager;
     
-    async globalSearch(query: string, filters?: SearchFilters): Promise<SearchResult[]> {
-        const results: SearchResult[] = [];
-        
-        // Search in database FTS index
-        const dbResults = await this.searchDatabase(query, filters);
-        
-        // Search in file content (for real-time accuracy)
-        const fileResults = await this.searchFiles(query, filters);
-        
-        // Merge and deduplicate results
-        return this.mergeSearchResults(dbResults, fileResults);
+    constructor(container: HTMLElement) {
+        this.initializeCalendar(container);
+        this.setupEventHandlers();
     }
     
-    private async searchDatabase(query: string, filters?: SearchFilters): Promise<SearchResult[]> {
-        let sql = `
-            SELECT n.file_path, n.title, n.category, n.tags,
-                   snippet(notes_fts, 1, '<mark>', '</mark>', '...', 32) as snippet,
-                   rank
-            FROM notes_fts 
-            JOIN note_metadata n ON notes_fts.rowid = n.id
-            WHERE notes_fts MATCH ?
-        `;
-        
-        const params = [query];
-        
-        if (filters?.category) {
-            sql += ` AND n.category = ?`;
-            params.push(filters.category);
-        }
-        
-        if (filters?.tags?.length) {
-            sql += ` AND (${filters.tags.map(() => 'n.tags LIKE ?').join(' OR ')})`;
-            params.push(...filters.tags.map(tag => `%${tag}%`));
-        }
-        
-        if (filters?.dateRange) {
-            sql += ` AND n.modified BETWEEN ? AND ?`;
-            params.push(filters.dateRange.start.toISOString(), filters.dateRange.end.toISOString());
-        }
-        
-        sql += ` ORDER BY rank LIMIT 50`;
-        
-        const rows = await this.database.all(sql, params);
-        
-        return rows.map(row => ({
-            filePath: row.file_path,
-            title: row.title,
-            category: row.category,
-            tags: JSON.parse(row.tags || '[]'),
-            snippet: row.snippet,
-            score: row.rank
-        }));
+    private initializeCalendar(container: HTMLElement): void {
+        this.calendar = new Calendar(container, {
+            plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
+            initialView: 'dayGridMonth',
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,timeGridDay'
+            },
+            events: this.loadCalendarEvents.bind(this),
+            eventClick: this.handleEventClick.bind(this),
+            dateClick: this.handleDateClick.bind(this)
+        });
     }
     
-    async quickSwitcher(query: string): Promise<QuickSwitchResult[]> {
-        // Fuzzy search for note titles and file names
-        const allNotes = await this.getAllNoteMetadata();
+    private async loadCalendarEvents(info: any): Promise<CalendarEvent[]> {
+        const events: CalendarEvent[] = [];
         
-        return fuzzySearch(allNotes, query, {
-            keys: ['title', 'fileName'],
-            threshold: 0.6
-        }).slice(0, 10);
+        // Load todos with due dates
+        const todos = await this.todoManager.getTodosInDateRange(info.start, info.end);
+        todos.forEach(todo => {
+            if (todo.dueDate) {
+                events.push({
+                    id: `todo-${todo.id}`,
+                    title: `📋 ${todo.text}`,
+                    date: todo.dueDate,
+                    backgroundColor: todo.isCompleted ? '#28a745' : '#ffc107',
+                    extendedProps: { type: 'todo', data: todo }
+                });
+            }
+        });
+        
+        // Load notes with scheduled dates
+        const notes = await this.noteManager.getNotesInDateRange(info.start, info.end);
+        notes.forEach(note => {
+            if (note.scheduledDate) {
+                events.push({
+                    id: `note-${note.id}`,
+                    title: `📝 ${note.title}`,
+                    date: note.scheduledDate,
+                    backgroundColor: '#007bff',
+                    extendedProps: { type: 'note', data: note }
+                });
+            }
+        });
+        
+        return events;
     }
     
-    async recentNotes(limit: number = 10): Promise<NoteMetadata[]> {
-        return await this.database.all(`
-            SELECT * FROM note_metadata 
-            ORDER BY last_accessed DESC, modified DESC 
-            LIMIT ?
-        `, [limit]);
+    private handleEventClick(info: any): void {
+        const { type, data } = info.event.extendedProps;
+        
+        if (type === 'todo') {
+            this.showTodoDetails(data);
+        } else if (type === 'note') {
+            this.navigateToNote(data.id);
+        }
+    }
+    
+    async exportToICS(): Promise<void> {
+        const events = await this.loadCalendarEvents({
+            start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
+            end: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)    // 90 days ahead
+        });
+        
+        const icsContent = this.generateICSContent(events);
+        await this.downloadFile('notesage-calendar.ics', icsContent);
     }
 }
+```
 ```
 
 #### 5. Knowledge Graph Component

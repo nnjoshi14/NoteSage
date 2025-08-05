@@ -104,15 +104,15 @@ This feature enables NoteSage to run as a native desktop application, providing 
 
 ### Requirement 6
 
-**User Story:** As a user, I want to configure my data storage and backup preferences, so that I can control how my data is stored and synchronized across devices.
+**User Story:** As a user, I want to configure my server connection and offline preferences, so that I can control how my data is synchronized and cached locally.
 
 #### Acceptance Criteria
 
-1. WHEN the user first launches the application THEN the system SHALL connect to cloud storage and create local cache for offline access
+1. WHEN the user first launches the application THEN the system SHALL prompt for server connection and create local cache for offline access
 2. WHEN the user configures sync settings THEN the system SHALL allow controlling sync frequency and offline cache size
-3. WHEN the user wants to backup data THEN the system SHALL provide export functionality to standard formats
-4. WHEN the user works offline THEN the system SHALL queue changes and sync when connection is restored
-5. IF cloud connection fails THEN the system SHALL continue working with local cache and display connection status
+3. WHEN the user wants to backup data THEN the system SHALL provide export functionality to standard formats (PDF, Markdown, HTML)
+4. WHEN the user works offline THEN the system SHALL queue changes and sync when server connection is restored
+5. IF server connection fails THEN the system SHALL continue working with local cache and display connection status
 
 ### Requirement 7
 

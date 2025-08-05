@@ -207,32 +207,135 @@ graph TB
 
 #### 3. Todo Management System
 
-**Todo List Component:**
-- Dedicated todos view
-- Status tracking (pending/completed)
-- Note linkage display (required for manual todos)
-- Person assignment
-- Cross-reference update system:
-  - When todo marked complete, update all note references
-  - Maintain todo status consistency across all mentions
-  - Real-time sync of todo states
+**Todo System Architecture:**
 
-**Todo Views:**
-- Advanced filtering system:
-  - Filter by note/page criteria
-  - Pending-only filter option
-  - Filter by assigned person
-  - Filter by due date range
-  - Custom search-based filters
-- Calendar integration with due dates
-- Person-specific todo lists
-- Bulk todo operations (mark complete, assign, delete)
+*Core Principle: Todos are derived from notes and exist as references, not independent entities*
 
-**Manual Todo Creation:**
-- Mandatory note linkage for manually created todos
-- Note selection interface during todo creation
-- Validation to prevent orphaned todos
-- Auto-suggestion of relevant notes based on context
+**Todo Extraction & Synchronization:**
+```typescript
+class TodoSyncManager {
+    private todoPattern = /- \[([ x])\] (.+)/g; // Markdown checkbox pattern
+    private syncQueue = new Set<number>(); // Note IDs to sync
+    
+    async extractTodosFromNote(noteId: number, content: string): Promise<Todo[]> {
+        const todos: Todo[] = [];
+        let match;
+        
+        while ((match = this.todoPattern.exec(content)) !== null) {
+            const isCompleted = match[1] === 'x';
+            const todoContent = match[2];
+            const position = match.index;
+            
+            todos.push({
+                id: `${noteId}-${position}`, // Composite ID
+                content: todoContent,
+                isCompleted,
+                noteId,
+                position,
+                sourceText: match[0]
+            });
+        }
+        
+        return todos;
+    }
+    
+    async syncTodoStatus(todoId: string, isCompleted: boolean): Promise<void> {
+        const [noteId, position] = todoId.split('-');
+        
+        // Update in source note
+        await this.updateTodoInNote(parseInt(noteId), parseInt(position), isCompleted);
+        
+        // Find all other notes that reference this todo
+        const referencingNotes = await this.findTodoReferences(todoId);
+        
+        // Update all references
+        for (const refNoteId of referencingNotes) {
+            await this.updateTodoInNote(refNoteId, parseInt(position), isCompleted);
+        }
+        
+        // Trigger real-time sync to all connected clients
+        this.eventEmitter.emit('todo:status-changed', {
+            todoId,
+            isCompleted,
+            affectedNotes: [parseInt(noteId), ...referencingNotes]
+        });
+    }
+    
+    private async updateTodoInNote(noteId: number, position: number, isCompleted: boolean): Promise<void> {
+        const note = await this.database.getNote(noteId);
+        const updatedContent = this.replaceTodoStatus(note.content, position, isCompleted);
+        
+        await this.database.updateNote(noteId, {
+            content: updatedContent,
+            updated_at: new Date()
+        });
+    }
+    
+    private replaceTodoStatus(content: string, position: number, isCompleted: boolean): string {
+        const checkbox = isCompleted ? '- [x]' : '- [ ]';
+        const lines = content.split('\n');
+        
+        // Find the todo at the specific position and update it
+        let currentPos = 0;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.match(/- \[([ x])\]/)) {
+                if (currentPos === position) {
+                    lines[i] = line.replace(/- \[([ x])\]/, checkbox);
+                    break;
+                }
+                currentPos++;
+            }
+        }
+        
+        return lines.join('\n');
+    }
+}
+```
+
+**Todo Views & Management:**
+- **Derived Todo List**: Automatically scanned from all notes in real-time
+- **Status Synchronization**: Changes in todo view instantly update source notes
+- **Cross-Reference Updates**: All mentions of the same todo across notes stay synchronized
+- **AI-Extracted Todos**: AI identifies todos in natural language and converts to checkboxes
+- **Manual Todo Creation**: Creates checkbox in selected note, not standalone todo
+- **Real-time Updates**: WebSocket-based sync ensures all views stay consistent
+
+**Todo Database Schema (Reference-based):**
+```sql
+-- Todos are stored as references to note positions, not independent entities
+CREATE TABLE todo_references (
+    id TEXT PRIMARY KEY, -- Composite: noteId-position
+    note_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    is_completed BOOLEAN DEFAULT FALSE,
+    position INTEGER NOT NULL, -- Position in note content
+    due_date DATE,
+    assigned_person_id INTEGER,
+    extracted_by TEXT DEFAULT 'user', -- 'user' or 'ai'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+    FOREIGN KEY (assigned_person_id) REFERENCES people(id)
+);
+
+-- Track todo mentions across notes for cross-referencing
+CREATE TABLE todo_mentions (
+    id INTEGER PRIMARY KEY,
+    todo_reference_id TEXT NOT NULL,
+    mentioned_in_note_id INTEGER NOT NULL,
+    mention_position INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (todo_reference_id) REFERENCES todo_references(id) ON DELETE CASCADE,
+    FOREIGN KEY (mentioned_in_note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+```
+
+**Automatic Todo Discovery:**
+- **Content Scanning**: Continuously scan note content for checkbox patterns
+- **AI Enhancement**: AI identifies implicit todos ("need to call John") and suggests checkbox conversion
+- **Status Tracking**: Monitor checkbox state changes across all notes
+- **Conflict Resolution**: Handle simultaneous edits to the same todo from different views
 
 #### 4. Knowledge Graph Visualization
 
@@ -354,13 +457,16 @@ DELETE /api/people/:id         - Delete person
 GET    /api/people/:id/notes   - Get notes connected to person
 ```
 
-**Todos API:**
+**Todos API (Reference-based):**
 ```
-GET    /api/todos              - List all todos
-POST   /api/todos              - Create new todo
-PUT    /api/todos/:id          - Update todo status
-DELETE /api/todos/:id          - Delete todo
+GET    /api/todos              - List all todos derived from notes
+GET    /api/todos/scan         - Trigger full rescan of all notes for todos
+PUT    /api/todos/:id/status   - Update todo status (syncs across all references)
+POST   /api/todos/create       - Create todo checkbox in specified note
 GET    /api/todos/calendar     - Get todos for calendar view
+GET    /api/todos/note/:noteId - Get all todos from specific note
+PUT    /api/todos/:id/assign   - Assign todo to person
+GET    /api/todos/sync-status  - Get real-time sync status
 ```
 
 **Calendar API:**
@@ -479,20 +585,40 @@ CREATE TABLE people (
 );
 ```
 
-**Todos Table:**
+**Todo References Table (Reference-based System):**
 ```sql
-CREATE TABLE todos (
-    id INTEGER PRIMARY KEY,
+-- Todos are stored as references to note positions, not independent entities
+CREATE TABLE todo_references (
+    id TEXT PRIMARY KEY, -- Composite: noteId-position
+    note_id INTEGER NOT NULL,
     content TEXT NOT NULL,
     is_completed BOOLEAN DEFAULT FALSE,
+    position INTEGER NOT NULL, -- Position in note content
     due_date DATE,
-    note_id INTEGER,
-    person_id INTEGER,
+    assigned_person_id INTEGER,
+    extracted_by TEXT DEFAULT 'user', -- 'user' or 'ai'
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    completed_at DATETIME,
-    FOREIGN KEY (note_id) REFERENCES notes(id),
-    FOREIGN KEY (person_id) REFERENCES people(id)
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+    FOREIGN KEY (assigned_person_id) REFERENCES people(id)
 );
+
+-- Track todo mentions across notes for cross-referencing
+CREATE TABLE todo_mentions (
+    id INTEGER PRIMARY KEY,
+    todo_reference_id TEXT NOT NULL,
+    mentioned_in_note_id INTEGER NOT NULL,
+    mention_position INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (todo_reference_id) REFERENCES todo_references(id) ON DELETE CASCADE,
+    FOREIGN KEY (mentioned_in_note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+
+-- Indexes for performance
+CREATE INDEX idx_todo_references_note_id ON todo_references(note_id);
+CREATE INDEX idx_todo_references_completed ON todo_references(is_completed);
+CREATE INDEX idx_todo_mentions_todo_ref ON todo_mentions(todo_reference_id);
+CREATE INDEX idx_todo_mentions_note ON todo_mentions(mentioned_in_note_id);
 ```
 
 **Connections Table:**
@@ -550,19 +676,40 @@ interface Person {
 }
 ```
 
-### Todo Model
+### Todo Model (Reference-based)
 ```typescript
 interface Todo {
-    id: number;
+    id: string; // Composite ID: noteId-position
     content: string;
     isCompleted: boolean;
-    dueDate?: Date;
     noteId: number;
-    personId?: number;
+    position: number; // Position in note content
+    sourceText: string; // Original checkbox text from note
+    dueDate?: Date;
+    assignedPersonId?: number;
+    extractedBy: 'user' | 'ai';
     createdAt: Date;
-    completedAt?: Date;
+    updatedAt: Date;
+    
+    // Derived properties
     linkedNote: Note;
     assignedPerson?: Person;
+    mentions: TodoMention[]; // Other notes that reference this todo
+}
+
+interface TodoMention {
+    id: number;
+    todoReferenceId: string;
+    mentionedInNoteId: number;
+    mentionPosition: number;
+    createdAt: Date;
+}
+
+interface TodoSyncEvent {
+    todoId: string;
+    isCompleted: boolean;
+    affectedNotes: number[];
+    timestamp: Date;
 }
 ```
 

@@ -2,85 +2,144 @@
 
 ## Overview
 
-NoteSage Desktop is an Electron-based application that provides a comprehensive knowledge management solution with rich text editing, people management, AI-powered insights, knowledge graph visualization, and todo management. The application follows a hybrid architecture where notes are stored as markdown files (Obsidian-like approach) while metadata and relationships are managed through SQLite for optimal performance and data portability.
+NoteSage is a multi-platform knowledge management solution designed with a desktop-first approach that will eventually expand to web (GCP-hosted), Android, and iOS clients. The current focus is on building a robust desktop application with offline-first capabilities, which will serve as the foundation for future platform expansions.
 
-The design emphasizes offline-first functionality, data portability, and user control over their knowledge base while providing modern features like AI integration, real-time collaboration, and advanced search capabilities.
+The application uses a hybrid architecture where notes are stored as markdown files (Obsidian-like approach) while metadata and relationships are managed through SQLite for optimal performance and data portability. This architecture is designed to support both local storage (desktop offline) and cloud synchronization (web/mobile) while maintaining the desktop's offline-first advantage.
+
+The design prioritizes:
+- **Desktop-native performance** with offline-first functionality as the core offering
+- **Multi-platform architecture** that separates business logic from UI implementations
+- **Data portability** through markdown files and standardized APIs
+- **Scalable design** that can support cloud hosting and mobile clients
+- **Synchronization capabilities** between local and cloud storage
 
 ## Architecture
 
-### Hybrid Storage Architecture
+### Multi-Platform Architecture
 
-The application uses a hybrid approach combining the best of both file-based and database storage:
+The application uses a layered architecture designed to support multiple platforms while maintaining desktop-first offline capabilities:
 
 ```mermaid
 graph TB
-    subgraph "Electron Main Process"
-        MP[Main Process]
-        ES[Express Server]
-        subgraph "Storage Layer"
-            FS[File System - Markdown Files]
-            DB[(SQLite Database)]
-            IDX[Search Index FTS5]
-            CACHE[LRU Cache]
+    subgraph "Desktop Client (Current Focus)"
+        subgraph "Electron Main Process"
+            MP[Main Process]
+            subgraph "Storage Layer"
+                FS[File System - Markdown Files]
+                DB[(SQLite Database)]
+                IDX[Search Index FTS5]
+                CACHE[LRU Cache]
+            end
+            subgraph "Service Layer"
+                FM[File Manager]
+                AI[AI Context Manager]
+                TODO[Todo Sync Manager]
+                SEARCH[Search Engine]
+                API[Internal API Layer]
+                SYNC[Cloud Sync Engine]
+            end
         end
-        subgraph "Service Layer"
-            FM[File Manager]
-            AI[AI Context Manager]
-            TODO[Todo Sync Manager]
-            SEARCH[Search Engine]
+        
+        subgraph "Electron Renderer Process"
+            subgraph "UI Framework"
+                UI[React/Vue/Svelte]
+                STATE[State Management]
+            end
+            subgraph "UI Components"
+                NE[Note Editor]
+                PM[People Manager]
+                TM[Todo Manager]
+                KG[Knowledge Graph]
+                CV[Calendar View]
+            end
+            subgraph "Desktop Features"
+                MENU[Native Menus]
+                SHORTCUTS[Keyboard Shortcuts]
+                NOTIFICATIONS[Native Notifications]
+                TRAY[System Tray]
+            end
         end
     end
     
-    subgraph "Electron Renderer Process"
-        RF[React Frontend]
-        subgraph "State Management"
-            STORE[Redux Store]
-            RTK[RTK Query]
+    subgraph "Future Platforms"
+        WEB[Web Client - GCP Hosted]
+        ANDROID[Android Client]
+        IOS[iOS Client]
+    end
+    
+    subgraph "Shared Services"
+        subgraph "Cloud Infrastructure (Future)"
+            CLOUD_API[Cloud API Server]
+            CLOUD_DB[(Cloud Database)]
+            CLOUD_STORAGE[Cloud File Storage]
+            CLOUD_SYNC[Sync Service]
         end
-        subgraph "UI Components"
-            NE[Note Editor]
-            PM[People Manager]
-            TM[Todo Manager]
-            KG[Knowledge Graph]
-            CV[Calendar View]
+        
+        subgraph "External Services"
+            OPENAI[OpenAI API]
+            GEMINI[Gemini API]
+            GROK[Grok API]
         end
     end
     
-    subgraph "External Services"
-        OPENAI[OpenAI API]
-        GEMINI[Gemini API]
-        GROK[Grok API]
-    end
+    MP --> UI
+    UI <--> STATE
+    STATE --> API
+    API --> FS
+    API --> DB
+    API --> AI
+    SYNC -.-> CLOUD_SYNC
     
-    MP --> RF
-    RF <--> RTK
-    RTK --> ES
-    ES --> FS
-    ES --> DB
-    ES --> AI
+    WEB -.-> CLOUD_API
+    ANDROID -.-> CLOUD_API
+    IOS -.-> CLOUD_API
+    
     AI --> OPENAI
     AI --> GEMINI
     AI --> GROK
 ```
 
+### Multi-Platform Strategy
+
+**Phase 1: Desktop-First (Current Focus)**
+- Build robust offline-first desktop application
+- Establish core architecture and data models
+- Perfect user experience and performance
+- Create foundation for future platform expansion
+
+**Phase 2: Cloud Infrastructure (Future)**
+- Deploy cloud API server on GCP
+- Implement cloud database and file storage
+- Build synchronization service between desktop and cloud
+- Maintain desktop offline capabilities as key differentiator
+
+**Phase 3: Web & Mobile Clients (Future)**
+- Web client using same UI components (React/Vue/Svelte)
+- Android and iOS native clients
+- Shared business logic through standardized APIs
+- Feature parity across platforms where possible
+
 ### Storage Strategy
 
-**Markdown Files (.md):**
-- Note content stored as markdown files in hierarchical folder structure
-- YAML frontmatter for basic metadata (title, category, tags, dates)
-- Todos embedded as markdown checkboxes with unique IDs: `- [ ][t1] Task text @person date`
-- @mentions and #backlinks as part of markdown content
-- Version control friendly (Git integration possible)
-- User can edit files directly with external editors
+**Desktop Storage (Current):**
+- **Markdown Files (.md)**: Note content in hierarchical folder structure
+- **YAML frontmatter**: Basic metadata (title, category, tags, dates)
+- **Embedded todos**: `- [ ][t1] Task text @person date` format
+- **Direct file access**: Users can edit with external editors
+- **Version control ready**: Git integration possible
+- **SQLite Database**: Metadata, relationships, search indexes, AI results
 
-**SQLite Database:**
-- People information and contact details
-- Note metadata and file paths
-- Todo references and relationships
-- @mention and #backlink relationships
-- Search indexes for fast full-text search
-- AI analysis results and insights
-- Application settings and preferences
+**Future Cloud Storage:**
+- **Cloud file storage**: Synchronized markdown files
+- **Cloud database**: Shared metadata and relationships
+- **Hybrid sync**: Desktop maintains local files + cloud backup
+- **Conflict resolution**: Merge strategies for simultaneous edits
+- **Offline-first**: Desktop continues working without internet
+
+**Cross-Platform Data Models:**
+- **Standardized APIs**: Same data models across all platforms
+- **Platform-agnostic business logic**: Core functionality shared
+- **Platform-specific optimizations**: UI and storage optimized per platform
 
 ### File Structure Example
 

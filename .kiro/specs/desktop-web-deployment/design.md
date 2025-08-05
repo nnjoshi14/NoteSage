@@ -24,11 +24,11 @@ The application uses a clean client-server architecture with separate desktop cl
 graph TB
     subgraph "NoteSage Server (Standalone)"
         subgraph "Server Application"
-            SERVER[Express/Fastify Server]
+            SERVER[Go HTTP Server with Gin/Echo]
             API[REST API Layer]
-            AUTH[Authentication & Authorization]
+            AUTH[JWT Authentication & Authorization]
             MIDDLEWARE[Middleware Stack]
-            WEBSOCKET[WebSocket for Real-time]
+            WEBSOCKET[Gorilla WebSocket for Real-time]
         end
         subgraph "Storage Layer"
             DB[(PostgreSQL/SQLite)]
@@ -123,7 +123,7 @@ graph TB
 
 **Phase 1: Desktop Client + Standalone Server (Current Focus)**
 - Build desktop client application (Electron-based)
-- Build standalone NoteSage server (Node.js/Express)
+- Build standalone NoteSage server (Go with Gin/Echo framework)
 - Establish clean client-server separation via REST API
 - Server supports multiple concurrent users
 - Manual server installation and configuration
@@ -142,28 +142,30 @@ graph TB
 
 ### Standalone Server Architecture
 
-**NoteSage Server (Standalone Package):**
-- **Independent installation**: Server installs separately from desktop client
-- **Multi-user support**: Handles authentication and authorization for multiple users
-- **Database management**: Manages PostgreSQL/SQLite database independently
-- **REST API**: Standard HTTP API for all client operations
-- **WebSocket support**: Real-time updates for collaborative features
-- **Platform agnostic**: Same server runs on Windows, macOS, Linux
+**NoteSage Server (Go Binary):**
+- **Single binary deployment**: Compiled Go binary with no external dependencies
+- **Multi-user support**: JWT-based authentication and authorization for multiple users
+- **Database management**: GORM for PostgreSQL/SQLite database operations
+- **REST API**: High-performance HTTP API using Gin or Echo framework
+- **WebSocket support**: Gorilla WebSocket for real-time collaborative features
+- **Cross-platform**: Single codebase compiles to Windows, macOS, Linux binaries
 
 **Database Strategy:**
-- **PostgreSQL**: Primary choice for multi-user scenarios and full features
+- **PostgreSQL**: Primary choice for multi-user scenarios with full-text search
 - **SQLite**: Alternative for single-user or simple deployments
+- **GORM**: Go ORM for database operations with automatic migrations
 - **Structured data**: Notes, todos, people, relationships as database records
 - **Rich content**: Note content stored as structured JSON for rich editing
-- **Full-text search**: Database indexes for fast search capabilities
+- **Full-text search**: PostgreSQL built-in search or SQLite FTS5
 - **ACID transactions**: Data consistency and integrity guaranteed
 
 **Client-Server Communication:**
 - **HTTP REST API**: All CRUD operations via standard REST endpoints
-- **WebSocket connections**: Real-time updates and collaborative editing
-- **Authentication**: JWT tokens or session-based authentication
+- **Gorilla WebSocket**: Real-time updates and collaborative editing
+- **JWT Authentication**: Stateless token-based authentication
 - **Offline support**: Desktop client caches data for offline operation
 - **Sync mechanism**: Automatic synchronization when connection restored
+- **API versioning**: Backward compatibility through versioned endpoints
 
 **Multi-Client Architecture:**
 - **Desktop client**: Electron app connects via HTTP/WebSocket
@@ -172,17 +174,101 @@ graph TB
 - **API versioning**: Backward compatibility for different client versions
 
 **Deployment Flexibility:**
+- **Single binary**: Download and run one executable file
+- **Cross-compilation**: Build binaries for all platforms from CI/CD
 - **Local installation**: Install on local machine or network server
 - **Network access**: Multiple users connect to same server instance
-- **Cloud deployment**: Lift-and-shift to cloud with no code changes
+- **Cloud deployment**: Same binary runs in cloud with environment config
 - **Docker support**: Containerized deployment for easy scaling
-- **Configuration**: Environment-based config for different deployment scenarios
+- **Configuration**: Environment variables and config files for different scenarios
 
 **Data Management:**
 - **User isolation**: Each user's data properly isolated and secured
 - **Backup/restore**: Database backup and restore functionality
 - **Export/import**: Data portability tools for migration
 - **Admin interface**: Server administration and user management tools
+
+### Go Technology Stack
+
+**Core Framework:**
+```go
+// Web Framework: Gin (high performance) or Echo (feature-rich)
+router := gin.Default()
+router.POST("/api/notes", createNote)
+router.GET("/api/notes/:id", getNote)
+router.PUT("/api/notes/:id", updateNote)
+router.DELETE("/api/notes/:id", deleteNote)
+```
+
+**Database Layer:**
+```go
+// GORM for database operations
+type Note struct {
+    ID        uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+    UserID    uuid.UUID `gorm:"type:uuid;not null"`
+    Title     string    `gorm:"not null"`
+    Content   JSON      `gorm:"type:jsonb"`
+    Category  string    `gorm:"default:'Note'"`
+    Tags      pq.StringArray `gorm:"type:text[]"`
+    CreatedAt time.Time
+    UpdatedAt time.Time
+}
+```
+
+**Authentication:**
+```go
+// JWT middleware for authentication
+func AuthMiddleware() gin.HandlerFunc {
+    return gin.HandlerFunc(func(c *gin.Context) {
+        token := c.GetHeader("Authorization")
+        claims, err := validateJWT(token)
+        if err != nil {
+            c.JSON(401, gin.H{"error": "Unauthorized"})
+            c.Abort()
+            return
+        }
+        c.Set("userID", claims.UserID)
+        c.Next()
+    })
+}
+```
+
+**WebSocket Support:**
+```go
+// Gorilla WebSocket for real-time features
+var upgrader = websocket.Upgrader{
+    CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+func handleWebSocket(c *gin.Context) {
+    conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+    if err != nil {
+        return
+    }
+    defer conn.Close()
+    
+    // Handle real-time note updates
+    for {
+        var msg Message
+        err := conn.ReadJSON(&msg)
+        if err != nil {
+            break
+        }
+        // Broadcast to other connected clients
+        broadcastToRoom(msg.RoomID, msg)
+    }
+}
+```
+
+**Key Go Libraries:**
+- **Gin/Echo**: Web framework for REST API
+- **GORM**: ORM for database operations
+- **Gorilla WebSocket**: WebSocket support for real-time features
+- **JWT-Go**: JWT token handling
+- **Viper**: Configuration management
+- **Logrus**: Structured logging
+- **Testify**: Testing framework
+- **Air**: Hot reload for development
 
 ### Database Schema Structure
 

@@ -7,11 +7,12 @@ NoteSage is a multi-platform knowledge management solution designed with a deskt
 The application uses a hybrid architecture where notes are stored as markdown files (Obsidian-like approach) while metadata and relationships are managed through SQLite for optimal performance and data portability. This architecture is designed to support both local storage (desktop offline) and cloud synchronization (web/mobile) while maintaining the desktop's offline-first advantage.
 
 The design prioritizes:
-- **Desktop-native performance** with offline-first functionality as the core offering
-- **Multi-platform architecture** that separates business logic from UI implementations
-- **Data portability** through markdown files and standardized APIs
-- **Scalable design** that can support cloud hosting and mobile clients
-- **Synchronization capabilities** between local and cloud storage
+- **Client-server separation** with clean API boundaries for maximum flexibility
+- **Multi-user support** through standalone server with proper authentication and authorization
+- **Deployment flexibility** allowing server to run locally or in cloud with no code changes
+- **Offline-first desktop experience** with local caching and sync capabilities
+- **Cross-platform compatibility** through standardized REST APIs that work for all client types
+- **Data ownership and control** with local server installation as the primary offering
 
 ## Architecture
 

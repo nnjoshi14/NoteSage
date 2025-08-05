@@ -2,32 +2,32 @@
 
 ## Overview
 
-NoteSage Desktop is an Electron-based application that packages the existing React/Express stack into a native desktop experience. The application provides a comprehensive knowledge management solution with rich text editing, people management, AI-powered insights, knowledge graph visualization, and todo management.
+NoteSage Desktop is an Electron-based application that provides a comprehensive knowledge management solution with rich text editing, people management, AI-powered insights, knowledge graph visualization, and todo management. The application follows a hybrid architecture where notes are stored as markdown files (Obsidian-like approach) while metadata and relationships are managed through SQLite for optimal performance and data portability.
 
-The design follows a hybrid architecture where an Express server runs embedded within the Electron main process, serving the React frontend through a renderer process. This approach maintains the existing web-based codebase while providing native desktop capabilities and local data storage.
+The design emphasizes offline-first functionality, data portability, and user control over their knowledge base while providing modern features like AI integration, real-time collaboration, and advanced search capabilities.
 
 ## Architecture
 
-### Offline-First Architecture
+### Hybrid Storage Architecture
+
+The application uses a hybrid approach combining the best of both file-based and database storage:
 
 ```mermaid
 graph TB
     subgraph "Electron Main Process"
         MP[Main Process]
         ES[Express Server]
-        subgraph "Data Layer"
-            DB[(SQLite + SQLCipher)]
+        subgraph "Storage Layer"
+            FS[File System - Markdown Files]
+            DB[(SQLite Database)]
             IDX[Search Index FTS5]
             CACHE[LRU Cache]
-            OFFLINE[Offline Queue]
-            CONFLICT[Conflict Resolver]
         end
         subgraph "Service Layer"
-            FS[File System Manager]
+            FM[File Manager]
             AI[AI Context Manager]
-            SYNC[Offline-First Sync Engine]
-            AUDIT[Audit Logger]
-            CONN[Connection Monitor]
+            TODO[Todo Sync Manager]
+            SEARCH[Search Engine]
         end
     end
     
@@ -36,19 +36,13 @@ graph TB
         subgraph "State Management"
             STORE[Redux Store]
             RTK[RTK Query]
-            PERSIST[Redux Persist]
         end
         subgraph "UI Components"
-            NE[Note Editor + Virtual Scroll]
-            PM[People Manager + Search]
-            TM[Todo Manager + Filters]
-            KG[Knowledge Graph + WebGL]
-            CV[Calendar View + Virtualization]
-        end
-        subgraph "Core Services"
-            KB[Keyboard Manager]
-            A11Y[Accessibility Manager]
-            THEME[Theme Manager]
+            NE[Note Editor]
+            PM[People Manager]
+            TM[Todo Manager]
+            KG[Knowledge Graph]
+            CV[Calendar View]
         end
     end
     
@@ -56,838 +50,600 @@ graph TB
         OPENAI[OpenAI API]
         GEMINI[Gemini API]
         GROK[Grok API]
-        LOCAL_AI[Local AI Fallback]
     end
     
     MP --> RF
     RF <--> RTK
     RTK --> ES
+    ES --> FS
     ES --> DB
-    ES --> IDX
-    ES --> CACHE
     ES --> AI
     AI --> OPENAI
     AI --> GEMINI
     AI --> GROK
-    AI --> LOCAL_AI
-    SYNC --> AUDIT
 ```
 
-### Performance-First Architecture Principles
+### Storage Strategy
 
-**Data Access Optimization:**
-- Implement connection pooling for SQLite
-- Use prepared statements for all queries
-- Implement query result caching with TTL
-- Add database query performance monitoring
+**Markdown Files (.md):**
+- Note content stored as markdown files in hierarchical folder structure
+- YAML frontmatter for basic metadata (title, category, tags, dates)
+- Todos embedded as markdown checkboxes with unique IDs: `- [ ][t1] Task text @person date`
+- @mentions and #backlinks as part of markdown content
+- Version control friendly (Git integration possible)
+- User can edit files directly with external editors
 
-**Memory Management:**
-- Implement virtual scrolling for all large lists
-- Use React.memo and useMemo strategically
-- Implement image lazy loading and compression
-- Add memory usage monitoring and cleanup
+**SQLite Database:**
+- People information and contact details
+- Note metadata and file paths
+- Todo references and relationships
+- @mention and #backlink relationships
+- Search indexes for fast full-text search
+- AI analysis results and insights
+- Application settings and preferences
 
-**Startup Performance:**
-- Lazy load non-critical components
-- Implement code splitting by feature
-- Preload critical data during splash screen
-- Use service workers for background tasks
+### File Structure Example
 
-### Offline-First Process Architecture
-
-**Main Process Responsibilities:**
-- Application lifecycle management
-- Express server hosting
-- Database operations (SQLite) - fully offline capable
-- File system operations
-- Native OS integration
-- Security and sandboxing
-- **Offline queue management**
-- **Conflict resolution**
-- **Background sync coordination**
-
-**Renderer Process Responsibilities:**
-- React UI rendering
-- User interaction handling
-- API communication with embedded Express server
-- Client-side state management
-- **Offline state management**
-- **Optimistic UI updates**
-- **Connection status monitoring**
-
-### Offline-First Sync Engine
-
-```typescript
-class OfflineFirstSyncEngine {
-    private offlineQueue: OfflineOperationQueue;
-    private conflictResolver: ConflictResolver;
-    private connectionMonitor: ConnectionMonitor;
-    private syncState: SyncStateManager;
-    
-    constructor() {
-        this.offlineQueue = new OfflineOperationQueue();
-        this.conflictResolver = new ConflictResolver();
-        this.connectionMonitor = new ConnectionMonitor();
-        this.syncState = new SyncStateManager();
-        
-        // Monitor connection changes
-        this.connectionMonitor.on('online', () => this.processPendingOperations());
-        this.connectionMonitor.on('offline', () => this.enableOfflineMode());
-    }
-    
-    async executeOperation(operation: DataOperation): Promise<OperationResult> {
-        // Always execute locally first (offline-first)
-        const localResult = await this.executeLocally(operation);
-        
-        if (this.connectionMonitor.isOnline()) {
-            try {
-                // Attempt immediate sync if online
-                await this.syncOperation(operation);
-                return { ...localResult, synced: true };
-            } catch (error) {
-                // Queue for later if sync fails
-                await this.offlineQueue.enqueue(operation);
-                return { ...localResult, synced: false, queued: true };
-            }
-        } else {
-            // Queue for later sync when offline
-            await this.offlineQueue.enqueue(operation);
-            return { ...localResult, synced: false, queued: true };
-        }
-    }
-    
-    private async executeLocally(operation: DataOperation): Promise<OperationResult> {
-        // All operations work offline-first
-        switch (operation.type) {
-            case 'CREATE_NOTE':
-                return await this.createNoteLocally(operation);
-            case 'UPDATE_NOTE':
-                return await this.updateNoteLocally(operation);
-            case 'DELETE_NOTE':
-                return await this.deleteNoteLocally(operation);
-            case 'UPDATE_TODO':
-                return await this.updateTodoLocally(operation);
-            default:
-                throw new Error(`Unknown operation type: ${operation.type}`);
-        }
-    }
-    
-    private async processPendingOperations(): Promise<void> {
-        const pendingOps = await this.offlineQueue.getAllPending();
-        
-        for (const operation of pendingOps) {
-            try {
-                await this.syncOperation(operation);
-                await this.offlineQueue.markCompleted(operation.id);
-            } catch (error) {
-                if (this.isConflictError(error)) {
-                    await this.handleConflict(operation, error);
-                } else {
-                    // Retry later
-                    await this.offlineQueue.incrementRetryCount(operation.id);
-                }
-            }
-        }
-    }
-    
-    private async handleConflict(operation: DataOperation, conflict: ConflictError): Promise<void> {
-        const resolution = await this.conflictResolver.resolve(operation, conflict);
-        
-        switch (resolution.strategy) {
-            case 'LOCAL_WINS':
-                await this.forceSyncOperation(operation);
-                break;
-            case 'REMOTE_WINS':
-                await this.applyRemoteChanges(conflict.remoteData);
-                break;
-            case 'MERGE':
-                const merged = await this.mergeChanges(operation, conflict.remoteData);
-                await this.syncOperation(merged);
-                break;
-            case 'USER_DECISION':
-                await this.promptUserForResolution(operation, conflict);
-                break;
-        }
-    }
-}
-
-class ConflictResolver {
-    async resolve(localOperation: DataOperation, conflict: ConflictError): Promise<ConflictResolution> {
-        // Automatic conflict resolution strategies
-        if (this.canAutoResolve(localOperation, conflict)) {
-            return this.autoResolve(localOperation, conflict);
-        }
-        
-        // For complex conflicts, create a resolution UI
-        return this.createUserResolutionPrompt(localOperation, conflict);
-    }
-    
-    private canAutoResolve(local: DataOperation, conflict: ConflictError): boolean {
-        // Simple heuristics for auto-resolution
-        if (local.type === 'UPDATE_NOTE' && conflict.type === 'CONTENT_CONFLICT') {
-            // Can merge if changes are in different sections
-            return !this.hasOverlappingChanges(local.data, conflict.remoteData);
-        }
-        
-        if (local.type === 'UPDATE_TODO' && conflict.type === 'STATUS_CONFLICT') {
-            // Todo status conflicts: most recent change wins
-            return true;
-        }
-        
-        return false;
-    }
-    
-    private async mergeChanges(local: DataOperation, remote: any): Promise<DataOperation> {
-        // Intelligent merging based on operation type
-        if (local.type === 'UPDATE_NOTE') {
-            return this.mergeNoteContent(local, remote);
-        }
-        
-        throw new Error('Cannot merge this operation type');
-    }
-    
-    private async mergeNoteContent(local: DataOperation, remote: any): Promise<DataOperation> {
-        // Use diff-merge algorithm for note content
-        const merged = this.diffMerge(local.data.content, remote.content);
-        
-        return {
-            ...local,
-            data: {
-                ...local.data,
-                content: merged,
-                mergedAt: new Date(),
-                mergeSource: 'auto'
-            }
-        };
-    }
-}
-
-class OfflineOperationQueue {
-    private db: Database;
-    
-    async enqueue(operation: DataOperation): Promise<void> {
-        await this.db.run(`
-            INSERT INTO offline_operations (
-                id, type, data, created_at, retry_count, status
-            ) VALUES (?, ?, ?, ?, 0, 'pending')
-        `, [
-            operation.id,
-            operation.type,
-            JSON.stringify(operation.data),
-            new Date().toISOString()
-        ]);
-    }
-    
-    async getAllPending(): Promise<DataOperation[]> {
-        const rows = await this.db.all(`
-            SELECT * FROM offline_operations 
-            WHERE status = 'pending' 
-            ORDER BY created_at ASC
-        `);
-        
-        return rows.map(row => ({
-            id: row.id,
-            type: row.type,
-            data: JSON.parse(row.data),
-            createdAt: new Date(row.created_at),
-            retryCount: row.retry_count
-        }));
-    }
-    
-    async markCompleted(operationId: string): Promise<void> {
-        await this.db.run(`
-            UPDATE offline_operations 
-            SET status = 'completed', completed_at = ? 
-            WHERE id = ?
-        `, [new Date().toISOString(), operationId]);
-    }
-}
+```
+/data-directory/
+├── notes/
+│   ├── meetings/
+│   │   ├── 2024-01-15-team-standup.md
+│   │   └── 2024-01-16-client-review.md
+│   ├── projects/
+│   │   ├── project-alpha/
+│   │   │   ├── requirements.md
+│   │   │   └── design-notes.md
+│   │   └── project-beta.md
+│   └── personal/
+│       ├── daily-notes/
+│       │   ├── 2024-01-15.md
+│       │   └── 2024-01-16.md
+│       └── ideas.md
+├── templates/
+│   ├── meeting-template.md
+│   ├── project-template.md
+│   └── daily-template.md
+├── archive/
+│   └── old-notes/
+└── database.db
 ```
 
-**Offline Database Schema:**
-```sql
--- Queue for offline operations
-CREATE TABLE offline_operations (
-    id TEXT PRIMARY KEY,
-    type TEXT NOT NULL,
-    data TEXT NOT NULL, -- JSON
-    created_at DATETIME NOT NULL,
-    completed_at DATETIME,
-    retry_count INTEGER DEFAULT 0,
-    status TEXT DEFAULT 'pending', -- pending, completed, failed
-    error_message TEXT
-);
+### Note File Format
 
--- Conflict resolution log
-CREATE TABLE conflict_resolutions (
-    id INTEGER PRIMARY KEY,
-    operation_id TEXT NOT NULL,
-    conflict_type TEXT NOT NULL,
-    resolution_strategy TEXT NOT NULL,
-    local_data TEXT, -- JSON
-    remote_data TEXT, -- JSON
-    merged_data TEXT, -- JSON
-    resolved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    resolved_by TEXT DEFAULT 'auto'
-);
+```markdown
+---
+title: "Team Standup - January 15, 2024"
+category: "Meeting"
+tags: ["team", "standup", "project-alpha"]
+created: 2024-01-15T09:00:00Z
+modified: 2024-01-15T10:30:00Z
+scheduled: 2024-01-15T09:00:00Z
+---
 
--- Connection status log
-CREATE TABLE connection_log (
-    id INTEGER PRIMARY KEY,
-    status TEXT NOT NULL, -- online, offline
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    duration INTEGER -- milliseconds offline
-);
+# Team Standup - January 15, 2024
+
+## Attendees
+- @John Smith
+- @Sarah Johnson
+- @Mike Davis
+
+## Discussion Points
+
+### Project Alpha Updates
+- [x][t1] Complete API documentation @John Smith 2024-01-14
+- [ ][t2] Review security requirements @Sarah Johnson 2024-01-16
+- [ ][t3] Setup testing environment @Mike Davis 2024-01-17
+
+### Action Items
+- [ ][t4] Schedule client demo @John Smith next week
+- [ ][t5] Update project timeline #Project Alpha Planning
+
+## Notes
+The team discussed progress on #Project Alpha and identified key blockers.
+Need to follow up with @Client Representative about requirements.
+
+## Mermaid Diagram
+```mermaid
+graph LR
+    A[Requirements] --> B[Design]
+    B --> C[Implementation]
+    C --> D[Testing]
 ```
-
-### Communication Patterns
-
-**Frontend ↔ Backend Communication:**
-- HTTP/REST API calls from React to embedded Express server
-- Standard web patterns (fetch/axios)
-- JSON data exchange
-
-**Main ↔ Renderer IPC:**
-- File operations (open, save, export)
-- Native dialogs (file picker, alerts)
-- Application menu actions
-- Window management
+```
 
 ## Components and Interfaces
 
 ### Core Components
 
-#### 1. Note Management System
+#### 1. File Management System
 
-**Rich Text Editor Component:**
-- Block-based editor architecture (similar to Notion)
-- Real-time auto-save functionality with 2-second debounce
-- Slash commands ("/") system for quick content insertion:
-  - `/table` - Insert table
-  - `/code` - Insert code block
-  - `/callout` - Insert callout block
-  - `/image` - Insert image
-  - `/mermaid` - Insert mermaid diagram
-- Block-level operations:
-  - Drag and drop to reorder blocks
-  - Duplicate blocks with Cmd+D
-  - Delete blocks with backspace/delete
-  - Block selection and bulk operations
-- Auto-completion and smart suggestions:
-  - @mention autocomplete for people
-  - #reference autocomplete for notes
-  - Tag suggestions based on existing tags
-  - Smart text completion based on note history
-- Dual editing modes:
-  - Rich text WYSIWYG mode (default)
-  - Raw markdown editing mode toggle
-- Support for multiple content types:
-  - Text blocks (paragraphs, headings, lists)
-  - Media blocks (images, files)
-  - Code blocks with syntax highlighting
-  - Tables with editing capabilities
-  - Mermaid diagrams
-  - Callout blocks (info, warning, tip)
+**File Manager Service:**
+```typescript
+class FileManager {
+    private dataDirectory: string;
+    private notesDirectory: string;
+    private templatesDirectory: string;
+    private archiveDirectory: string;
+    
+    constructor(dataDirectory: string) {
+        this.dataDirectory = dataDirectory;
+        this.notesDirectory = path.join(dataDirectory, 'notes');
+        this.templatesDirectory = path.join(dataDirectory, 'templates');
+        this.archiveDirectory = path.join(dataDirectory, 'archive');
+    }
+    
+    async createNote(folderPath: string, title: string, content: string, metadata: NoteMetadata): Promise<string> {
+        const fileName = this.sanitizeFileName(title) + '.md';
+        const fullPath = path.join(this.notesDirectory, folderPath, fileName);
+        
+        // Ensure directory exists
+        await fs.ensureDir(path.dirname(fullPath));
+        
+        // Create markdown content with frontmatter
+        const markdownContent = this.createMarkdownWithFrontmatter(content, metadata);
+        
+        // Write file
+        await fs.writeFile(fullPath, markdownContent, 'utf8');
+        
+        return fullPath;
+    }
+    
+    async readNote(filePath: string): Promise<{ content: string; metadata: NoteMetadata }> {
+        const rawContent = await fs.readFile(filePath, 'utf8');
+        return this.parseMarkdownWithFrontmatter(rawContent);
+    }
+    
+    async updateNote(filePath: string, content: string, metadata: NoteMetadata): Promise<void> {
+        const markdownContent = this.createMarkdownWithFrontmatter(content, metadata);
+        await fs.writeFile(filePath, markdownContent, 'utf8');
+        
+        // Update modification time in database
+        await this.updateFileMetadata(filePath, {
+            modified: new Date(),
+            size: markdownContent.length
+        });
+    }
+    
+    async moveNote(oldPath: string, newPath: string): Promise<void> {
+        await fs.ensureDir(path.dirname(newPath));
+        await fs.move(oldPath, newPath);
+        
+        // Update database references
+        await this.updateFilePathReferences(oldPath, newPath);
+    }
+    
+    async archiveNote(filePath: string): Promise<string> {
+        const relativePath = path.relative(this.notesDirectory, filePath);
+        const archivePath = path.join(this.archiveDirectory, relativePath);
+        
+        await fs.ensureDir(path.dirname(archivePath));
+        await fs.move(filePath, archivePath);
+        
+        return archivePath;
+    }
+    
+    private createMarkdownWithFrontmatter(content: string, metadata: NoteMetadata): string {
+        const frontmatter = yaml.dump(metadata);
+        return `---\n${frontmatter}---\n\n${content}`;
+    }
+    
+    private parseMarkdownWithFrontmatter(rawContent: string): { content: string; metadata: NoteMetadata } {
+        const { data: metadata, content } = matter(rawContent);
+        return { content, metadata: metadata as NoteMetadata };
+    }
+}
+```
 
-**Note Organization:**
-- Hierarchical folder structure
-- Category system (Note, Meeting, custom)
-- Nested hierarchical tag system:
-  - Support for tag hierarchies (e.g., `work/projects/client-a`)
-  - Tag autocomplete with hierarchy visualization
-  - Bulk tag operations
-- Favorites/bookmarks system
-- Archive functionality
-- Custom sorting options:
-  - By date (created/modified)
-  - By title (alphabetical)
-  - By category
-  - By tag
-  - By word count
-  - Custom user-defined sorting
+#### 2. Todo Management System
 
-**Note Templates System:**
-- Template creation from existing notes
-- Template categories (meeting, project, daily, etc.)
-- Template variables and placeholders
-- Quick template application via slash commands
-- Template sharing and import/export
-
-**Version History System:**
-- Automatic version snapshots on significant changes
-- Version comparison with diff visualization
-- Restore to previous version capability
-- Version metadata (timestamp, change summary)
-- Configurable retention policy
-
-**Search and Discovery:**
-- Global full-text search
-- Advanced search with filters
-- Quick switcher (fuzzy search)
-- Recent notes access
-
-#### 2. People Management System
-
-**Person Profile Component:**
-- Contact information fields
-- Avatar display
-- Connected notes visualization
-- Relationship tracking
-
-**People Directory:**
-- List/grid view of all contacts
-- Search and filtering capabilities
-- Bulk operations support
-
-#### 3. Todo Management System
-
-**Todo System Architecture:**
-
-*Core Principle: Todos are derived from notes and exist as references, not independent entities*
-
-**Todo Extraction & Synchronization:**
+**Todo Sync Manager with ID-based System:**
 ```typescript
 class TodoSyncManager {
-    private todoPattern = /- \[([ x])\] (.+)/g; // Markdown checkbox pattern
-    private syncQueue = new Set<number>(); // Note IDs to sync
+    private todoPattern = /- \[([ x])\]\[([t]\d+)\] (.+)/g;
+    private database: Database;
+    private fileManager: FileManager;
     
-    async extractTodosFromNote(noteId: number, content: string): Promise<Todo[]> {
+    async scanNoteForTodos(filePath: string): Promise<Todo[]> {
+        const { content } = await this.fileManager.readNote(filePath);
         const todos: Todo[] = [];
         let match;
         
+        // Reset regex lastIndex
+        this.todoPattern.lastIndex = 0;
+        
         while ((match = this.todoPattern.exec(content)) !== null) {
             const isCompleted = match[1] === 'x';
-            const todoContent = match[2];
-            const position = match.index;
+            const todoId = match[2]; // e.g., "t1", "t2"
+            const todoText = match[3];
+            
+            // Parse @person and date from todo text
+            const { text, person, date } = this.parseTodoContent(todoText);
             
             todos.push({
-                id: `${noteId}-${position}`, // Composite ID
-                content: todoContent,
-                isCompleted,
-                noteId,
-                position,
-                sourceText: match[0]
+                id: `${filePath}:${todoId}`, // Composite ID
+                todoId: todoId,
+                filePath: filePath,
+                text: text,
+                isCompleted: isCompleted,
+                assignedPerson: person,
+                dueDate: date,
+                rawText: match[0]
             });
         }
         
         return todos;
     }
     
-    async syncTodoStatus(todoId: string, isCompleted: boolean): Promise<void> {
-        const [noteId, position] = todoId.split('-');
+    async updateTodoStatus(compositeId: string, isCompleted: boolean): Promise<void> {
+        const [filePath, todoId] = compositeId.split(':');
         
-        // Update in source note
-        await this.updateTodoInNote(parseInt(noteId), parseInt(position), isCompleted);
+        // Read current file content
+        const { content, metadata } = await this.fileManager.readNote(filePath);
         
-        // Find all other notes that reference this todo
-        const referencingNotes = await this.findTodoReferences(todoId);
+        // Update the specific todo
+        const updatedContent = this.updateTodoInContent(content, todoId, isCompleted);
         
-        // Update all references
-        for (const refNoteId of referencingNotes) {
-            await this.updateTodoInNote(refNoteId, parseInt(position), isCompleted);
-        }
-        
-        // Trigger real-time sync to all connected clients
-        this.eventEmitter.emit('todo:status-changed', {
-            todoId,
-            isCompleted,
-            affectedNotes: [parseInt(noteId), ...referencingNotes]
+        // Write back to file
+        await this.fileManager.updateNote(filePath, updatedContent, {
+            ...metadata,
+            modified: new Date()
         });
+        
+        // Update database reference
+        await this.updateTodoInDatabase(compositeId, isCompleted);
     }
     
-    private async updateTodoInNote(noteId: number, position: number, isCompleted: boolean): Promise<void> {
-        const note = await this.database.getNote(noteId);
-        const updatedContent = this.replaceTodoStatus(note.content, position, isCompleted);
+    async manualSync(): Promise<SyncResult> {
+        const result: SyncResult = {
+            scannedFiles: 0,
+            updatedTodos: 0,
+            newTodos: 0,
+            deletedTodos: 0
+        };
         
-        await this.database.updateNote(noteId, {
-            content: updatedContent,
-            updated_at: new Date()
-        });
-    }
-    
-    private replaceTodoStatus(content: string, position: number, isCompleted: boolean): string {
-        const checkbox = isCompleted ? '- [x]' : '- [ ]';
-        const lines = content.split('\n');
+        // Get all notes that have been modified since last scan
+        const modifiedNotes = await this.getModifiedNotes();
         
-        // Find the todo at the specific position and update it
-        let currentPos = 0;
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.match(/- \[([ x])\]/)) {
-                if (currentPos === position) {
-                    lines[i] = line.replace(/- \[([ x])\]/, checkbox);
-                    break;
-                }
-                currentPos++;
-            }
+        for (const noteInfo of modifiedNotes) {
+            const todos = await this.scanNoteForTodos(noteInfo.filePath);
+            
+            // Compare with existing todos in database
+            const existingTodos = await this.getTodosForNote(noteInfo.filePath);
+            
+            // Update database with changes
+            await this.syncTodosToDatabase(noteInfo.filePath, todos, existingTodos);
+            
+            // Update last scan timestamp
+            await this.updateLastScanTime(noteInfo.filePath);
+            
+            result.scannedFiles++;
         }
         
-        return lines.join('\n');
+        return result;
+    }
+    
+    private updateTodoInContent(content: string, todoId: string, isCompleted: boolean): string {
+        const checkbox = isCompleted ? '[x]' : '[ ]';
+        const pattern = new RegExp(`- \\[([ x])\\]\\[${todoId}\\]`, 'g');
+        
+        return content.replace(pattern, `- ${checkbox}[${todoId}]`);
+    }
+    
+    private parseTodoContent(todoText: string): { text: string; person?: string; date?: Date } {
+        // Extract @person mentions
+        const personMatch = todoText.match(/@([^@\s]+(?:\s+[^@\s]+)*)/);
+        const person = personMatch ? personMatch[1] : undefined;
+        
+        // Extract dates (various formats)
+        const dateMatch = todoText.match(/(\d{4}-\d{2}-\d{2}|next week|tomorrow|today)/i);
+        const date = dateMatch ? this.parseDate(dateMatch[1]) : undefined;
+        
+        // Clean text (remove @person and date)
+        let cleanText = todoText
+            .replace(/@([^@\s]+(?:\s+[^@\s]+)*)/, '')
+            .replace(/(\d{4}-\d{2}-\d{2}|next week|tomorrow|today)/i, '')
+            .trim();
+        
+        return { text: cleanText, person, date };
+    }
+    
+    async generateNextTodoId(filePath: string): Promise<string> {
+        const existingTodos = await this.getTodosForNote(filePath);
+        const existingIds = existingTodos.map(t => parseInt(t.todoId.substring(1))); // Remove 't' prefix
+        const nextId = Math.max(0, ...existingIds) + 1;
+        return `t${nextId}`;
     }
 }
 ```
 
-**Todo Views & Management:**
-- **Derived Todo List**: Automatically scanned from all notes in real-time
-- **Status Synchronization**: Changes in todo view instantly update source notes
-- **Cross-Reference Updates**: All mentions of the same todo across notes stay synchronized
-- **AI-Extracted Todos**: AI identifies todos in natural language and converts to checkboxes
-- **Manual Todo Creation**: Creates checkbox in selected note, not standalone todo
-- **Real-time Updates**: WebSocket-based sync ensures all views stay consistent
+#### 3. Rich Text Editor Component
 
-**Todo Database Schema (Reference-based):**
-```sql
--- Todos are stored as references to note positions, not independent entities
-CREATE TABLE todo_references (
-    id TEXT PRIMARY KEY, -- Composite: noteId-position
-    note_id INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    is_completed BOOLEAN DEFAULT FALSE,
-    position INTEGER NOT NULL, -- Position in note content
-    due_date DATE,
-    assigned_person_id INTEGER,
-    extracted_by TEXT DEFAULT 'user', -- 'user' or 'ai'
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
-    FOREIGN KEY (assigned_person_id) REFERENCES people(id)
-);
-
--- Track todo mentions across notes for cross-referencing
-CREATE TABLE todo_mentions (
-    id INTEGER PRIMARY KEY,
-    todo_reference_id TEXT NOT NULL,
-    mentioned_in_note_id INTEGER NOT NULL,
-    mention_position INTEGER NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (todo_reference_id) REFERENCES todo_references(id) ON DELETE CASCADE,
-    FOREIGN KEY (mentioned_in_note_id) REFERENCES notes(id) ON DELETE CASCADE
-);
+**Editor with Slash Commands and Auto-completion:**
+```typescript
+class RichTextEditor {
+    private editor: Editor;
+    private slashCommands: SlashCommand[];
+    private autoCompleteProviders: AutoCompleteProvider[];
+    
+    constructor() {
+        this.initializeSlashCommands();
+        this.initializeAutoComplete();
+    }
+    
+    private initializeSlashCommands(): void {
+        this.slashCommands = [
+            {
+                trigger: '/table',
+                description: 'Insert table',
+                action: () => this.insertTable()
+            },
+            {
+                trigger: '/code',
+                description: 'Insert code block',
+                action: () => this.insertCodeBlock()
+            },
+            {
+                trigger: '/callout',
+                description: 'Insert callout block',
+                action: () => this.insertCallout()
+            },
+            {
+                trigger: '/mermaid',
+                description: 'Insert mermaid diagram',
+                action: () => this.insertMermaidDiagram()
+            },
+            {
+                trigger: '/todo',
+                description: 'Insert todo item',
+                action: () => this.insertTodo()
+            },
+            {
+                trigger: '/template',
+                description: 'Insert template',
+                action: () => this.showTemplateSelector()
+            }
+        ];
+    }
+    
+    private initializeAutoComplete(): void {
+        this.autoCompleteProviders = [
+            new PersonMentionProvider(), // @mentions
+            new NoteReferenceProvider(), // #references
+            new TagProvider(), // #tags
+            new DateProvider() // Smart date completion
+        ];
+    }
+    
+    async insertTodo(): Promise<void> {
+        const nextId = await this.todoManager.generateNextTodoId(this.currentFilePath);
+        const todoTemplate = `- [ ][${nextId}] `;
+        
+        this.editor.insertText(todoTemplate);
+        this.editor.focus();
+    }
+    
+    private handleSlashCommand(command: string): void {
+        const matchedCommand = this.slashCommands.find(cmd => 
+            cmd.trigger.toLowerCase().startsWith(command.toLowerCase())
+        );
+        
+        if (matchedCommand) {
+            matchedCommand.action();
+        }
+    }
+}
 ```
 
-**Automatic Todo Discovery:**
-- **Content Scanning**: Continuously scan note content for checkbox patterns
-- **AI Enhancement**: AI identifies implicit todos ("need to call John") and suggests checkbox conversion
-- **Status Tracking**: Monitor checkbox state changes across all notes
-- **Conflict Resolution**: Handle simultaneous edits to the same todo from different views
+#### 4. Search Engine
 
-#### 4. Knowledge Graph Visualization
-
-**Graph Component:**
-- D3.js-based interactive visualization with force-directed layout
-- Node types: Notes, People
-- Edge types: Mentions, References, Connections
-- Interactive features:
-  - Drag and drop repositioning with physics simulation
-  - Zoom and pan with smooth transitions
-  - Node selection with detailed preview panels
-  - Search filtering with node highlighting
-  - Cluster visualization for related content
-  - Customizable node colors and sizes
-  - Export graph as image or data
-- Performance optimizations:
-  - Canvas rendering for large graphs (>1000 nodes)
-  - Level-of-detail rendering
-  - Viewport culling for off-screen nodes
-
-#### 5. Calendar View
-
-**Calendar Component:**
-The calendar view serves as a unified timeline interface that aggregates all time-based content from across the knowledge base.
-
-**View Types:**
-- **Monthly View**: Overview of all time-based content for the month
-- **Weekly View**: Detailed week view with time slots
-- **Daily View**: Hour-by-hour breakdown of scheduled content
-- **Agenda View**: Linear list of upcoming time-based items
-
-**Content Types Displayed:**
-
-*Todos with Due Dates:*
-- Display todos with assigned due dates
-- Visual indicators for overdue, due today, and upcoming todos
-- Color coding by priority or person assignment
-- Quick completion toggle directly from calendar
-
-*Notes with Dates:*
-- Meeting notes with scheduled times
-- Dated journal entries
-- Notes with embedded date references
-- Notes created on specific dates (with option to show/hide)
-
-*Time-based Content:*
-- Events extracted from note content
-- Recurring items (weekly meetings, regular check-ins)
-- Deadlines mentioned in notes
-- Follow-up dates from people interactions
-
-**Calendar Features:**
-
-*Navigation:*
-- Month/week/day navigation controls
-- Today button for quick return
-- Date picker for jumping to specific dates
-- Keyboard shortcuts (arrow keys, j/k navigation)
-
-*Content Interaction:*
-- Click to view full note/todo details
-- Hover previews for quick content viewing
-- Drag and drop to reschedule items
-- Right-click context menu for quick actions
-
-*Filtering and Views:*
-- Filter by content type (todos only, notes only, etc.)
-- Filter by person (show items assigned to specific people)
-- Filter by category (meeting notes, personal todos, etc.)
-- Hide/show completed todos
-- Custom date ranges
-
-*Visual Design:*
-- Color coding by content type and priority
-- Density controls (compact/comfortable/spacious)
-- Dark/light theme support
-- Print-friendly view option
-
-**Calendar Data Integration:**
-
-*Date Detection:*
-- Automatic parsing of dates from note content
-- Support for natural language dates ("next Friday", "in 2 weeks")
-- Multiple date formats (ISO, US, European)
-- Time zone handling for scheduled content
-
-*Smart Scheduling:*
-- Suggest optimal times for todos based on existing schedule
-- Conflict detection for overlapping items
-- Buffer time recommendations between meetings
-
-*Sync and Export:*
-- Export calendar data to ICS format
-- Integration hooks for external calendar systems
-- Backup calendar data with other application data
-
-### Interface Specifications
-
-#### API Endpoints
-
-**Notes API:**
-```
-GET    /api/notes              - List all notes
-POST   /api/notes              - Create new note
-GET    /api/notes/:id          - Get specific note
-PUT    /api/notes/:id          - Update note
-DELETE /api/notes/:id          - Delete note (move to trash)
-GET    /api/notes/search       - Search notes
-GET    /api/notes/recent       - Get recent notes
+**Full-text Search with File and Database Integration:**
+```typescript
+class SearchEngine {
+    private database: Database;
+    private fileManager: FileManager;
+    
+    async globalSearch(query: string, filters?: SearchFilters): Promise<SearchResult[]> {
+        const results: SearchResult[] = [];
+        
+        // Search in database FTS index
+        const dbResults = await this.searchDatabase(query, filters);
+        
+        // Search in file content (for real-time accuracy)
+        const fileResults = await this.searchFiles(query, filters);
+        
+        // Merge and deduplicate results
+        return this.mergeSearchResults(dbResults, fileResults);
+    }
+    
+    private async searchDatabase(query: string, filters?: SearchFilters): Promise<SearchResult[]> {
+        let sql = `
+            SELECT n.file_path, n.title, n.category, n.tags,
+                   snippet(notes_fts, 1, '<mark>', '</mark>', '...', 32) as snippet,
+                   rank
+            FROM notes_fts 
+            JOIN note_metadata n ON notes_fts.rowid = n.id
+            WHERE notes_fts MATCH ?
+        `;
+        
+        const params = [query];
+        
+        if (filters?.category) {
+            sql += ` AND n.category = ?`;
+            params.push(filters.category);
+        }
+        
+        if (filters?.tags?.length) {
+            sql += ` AND (${filters.tags.map(() => 'n.tags LIKE ?').join(' OR ')})`;
+            params.push(...filters.tags.map(tag => `%${tag}%`));
+        }
+        
+        if (filters?.dateRange) {
+            sql += ` AND n.modified BETWEEN ? AND ?`;
+            params.push(filters.dateRange.start.toISOString(), filters.dateRange.end.toISOString());
+        }
+        
+        sql += ` ORDER BY rank LIMIT 50`;
+        
+        const rows = await this.database.all(sql, params);
+        
+        return rows.map(row => ({
+            filePath: row.file_path,
+            title: row.title,
+            category: row.category,
+            tags: JSON.parse(row.tags || '[]'),
+            snippet: row.snippet,
+            score: row.rank
+        }));
+    }
+    
+    async quickSwitcher(query: string): Promise<QuickSwitchResult[]> {
+        // Fuzzy search for note titles and file names
+        const allNotes = await this.getAllNoteMetadata();
+        
+        return fuzzySearch(allNotes, query, {
+            keys: ['title', 'fileName'],
+            threshold: 0.6
+        }).slice(0, 10);
+    }
+    
+    async recentNotes(limit: number = 10): Promise<NoteMetadata[]> {
+        return await this.database.all(`
+            SELECT * FROM note_metadata 
+            ORDER BY last_accessed DESC, modified DESC 
+            LIMIT ?
+        `, [limit]);
+    }
+}
 ```
 
-**People API:**
-```
-GET    /api/people             - List all people
-POST   /api/people             - Create new person
-GET    /api/people/:id         - Get specific person
-PUT    /api/people/:id         - Update person
-DELETE /api/people/:id         - Delete person
-GET    /api/people/:id/notes   - Get notes connected to person
-```
+#### 5. Knowledge Graph Component
 
-**Todos API (Reference-based):**
-```
-GET    /api/todos              - List all todos derived from notes
-GET    /api/todos/scan         - Trigger full rescan of all notes for todos
-PUT    /api/todos/:id/status   - Update todo status (syncs across all references)
-POST   /api/todos/create       - Create todo checkbox in specified note
-GET    /api/todos/calendar     - Get todos for calendar view
-GET    /api/todos/note/:noteId - Get all todos from specific note
-PUT    /api/todos/:id/assign   - Assign todo to person
-GET    /api/todos/sync-status  - Get real-time sync status
-```
-
-**Calendar API:**
-```
-GET    /api/calendar           - Get all calendar items for date range
-GET    /api/calendar/month     - Get calendar items for specific month
-GET    /api/calendar/week      - Get calendar items for specific week
-GET    /api/calendar/day       - Get calendar items for specific day
-GET    /api/calendar/agenda    - Get upcoming calendar items
-POST   /api/calendar/export    - Export calendar data to ICS format
-```
-
-**Graph API:**
-```
-GET    /api/graph              - Get graph data (nodes and edges)
-GET    /api/graph/search       - Search graph nodes
-```
-
-#### Database Schema
-
-**Notes Table:**
-```sql
-CREATE TABLE notes (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    content TEXT,
-    content_hash TEXT NOT NULL, -- For change detection
-    category TEXT DEFAULT 'Note',
-    tags TEXT, -- JSON array
-    folder_path TEXT,
-    scheduled_date DATETIME,
-    word_count INTEGER DEFAULT 0,
-    is_archived BOOLEAN DEFAULT FALSE,
-    is_pinned BOOLEAN DEFAULT FALSE,
-    is_favorite BOOLEAN DEFAULT FALSE,
-    version INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_by TEXT DEFAULT 'user',
-    updated_by TEXT DEFAULT 'user',
-    auto_save_enabled BOOLEAN DEFAULT TRUE,
-    last_auto_save DATETIME
-);
-
--- Version History Table
-CREATE TABLE note_versions (
-    id INTEGER PRIMARY KEY,
-    note_id INTEGER NOT NULL,
-    version_number INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    content TEXT,
-    content_hash TEXT NOT NULL,
-    change_summary TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_by TEXT DEFAULT 'user',
-    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
-    UNIQUE(note_id, version_number)
-);
-
--- Note Templates Table
-CREATE TABLE note_templates (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    category TEXT,
-    template_content TEXT NOT NULL,
-    variables TEXT, -- JSON array of template variables
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Performance Indexes
-CREATE INDEX idx_notes_updated_at ON notes(updated_at DESC);
-CREATE INDEX idx_notes_category ON notes(category);
-CREATE INDEX idx_notes_folder_path ON notes(folder_path);
-CREATE INDEX idx_notes_scheduled_date ON notes(scheduled_date);
-CREATE INDEX idx_notes_content_hash ON notes(content_hash);
-
--- Full-Text Search
-CREATE VIRTUAL TABLE notes_fts USING fts5(
-    title, content, tags,
-    content='notes',
-    content_rowid='id'
-);
-
--- Triggers for FTS sync
-CREATE TRIGGER notes_fts_insert AFTER INSERT ON notes BEGIN
-    INSERT INTO notes_fts(rowid, title, content, tags) 
-    VALUES (new.id, new.title, new.content, new.tags);
-END;
-
-CREATE TRIGGER notes_fts_update AFTER UPDATE ON notes BEGIN
-    UPDATE notes_fts SET title=new.title, content=new.content, tags=new.tags 
-    WHERE rowid=new.id;
-END;
-
-CREATE TRIGGER notes_fts_delete AFTER DELETE ON notes BEGIN
-    DELETE FROM notes_fts WHERE rowid=old.id;
-END;
-```
-
-**People Table:**
-```sql
-CREATE TABLE people (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT,
-    phone TEXT,
-    company TEXT,
-    title TEXT,
-    linkedin_url TEXT,
-    avatar_url TEXT,
-    notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-**Todo References Table (Reference-based System):**
-```sql
--- Todos are stored as references to note positions, not independent entities
-CREATE TABLE todo_references (
-    id TEXT PRIMARY KEY, -- Composite: noteId-position
-    note_id INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    is_completed BOOLEAN DEFAULT FALSE,
-    position INTEGER NOT NULL, -- Position in note content
-    due_date DATE,
-    assigned_person_id INTEGER,
-    extracted_by TEXT DEFAULT 'user', -- 'user' or 'ai'
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
-    FOREIGN KEY (assigned_person_id) REFERENCES people(id)
-);
-
--- Track todo mentions across notes for cross-referencing
-CREATE TABLE todo_mentions (
-    id INTEGER PRIMARY KEY,
-    todo_reference_id TEXT NOT NULL,
-    mentioned_in_note_id INTEGER NOT NULL,
-    mention_position INTEGER NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (todo_reference_id) REFERENCES todo_references(id) ON DELETE CASCADE,
-    FOREIGN KEY (mentioned_in_note_id) REFERENCES notes(id) ON DELETE CASCADE
-);
-
--- Indexes for performance
-CREATE INDEX idx_todo_references_note_id ON todo_references(note_id);
-CREATE INDEX idx_todo_references_completed ON todo_references(is_completed);
-CREATE INDEX idx_todo_mentions_todo_ref ON todo_mentions(todo_reference_id);
-CREATE INDEX idx_todo_mentions_note ON todo_mentions(mentioned_in_note_id);
-```
-
-**Connections Table:**
-```sql
-CREATE TABLE connections (
-    id INTEGER PRIMARY KEY,
-    source_type TEXT NOT NULL, -- 'note' or 'person'
-    source_id INTEGER NOT NULL,
-    target_type TEXT NOT NULL, -- 'note' or 'person'
-    target_id INTEGER NOT NULL,
-    connection_type TEXT DEFAULT 'mention',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+**Graph Visualization with D3.js:**
+```typescript
+class KnowledgeGraph {
+    private svg: d3.Selection<SVGSVGElement, unknown, null, undefined>;
+    private simulation: d3.Simulation<GraphNode, GraphLink>;
+    private nodes: GraphNode[];
+    private links: GraphLink[];
+    
+    constructor(container: HTMLElement) {
+        this.initializeVisualization(container);
+        this.setupSimulation();
+    }
+    
+    async loadGraphData(): Promise<void> {
+        const graphData = await this.fetchGraphData();
+        this.nodes = graphData.nodes;
+        this.links = graphData.links;
+        
+        this.updateVisualization();
+    }
+    
+    private async fetchGraphData(): Promise<GraphData> {
+        // Fetch nodes (notes and people)
+        const notes = await this.api.get('/api/notes');
+        const people = await this.api.get('/api/people');
+        const connections = await this.api.get('/api/connections');
+        
+        const nodes: GraphNode[] = [
+            ...notes.map(note => ({
+                id: `note-${note.id}`,
+                type: 'note',
+                title: note.title,
+                category: note.category,
+                size: Math.log(note.content.length + 1) * 3
+            })),
+            ...people.map(person => ({
+                id: `person-${person.id}`,
+                type: 'person',
+                title: person.name,
+                size: 8
+            }))
+        ];
+        
+        const links: GraphLink[] = connections.map(conn => ({
+            source: `${conn.source_type}-${conn.source_id}`,
+            target: `${conn.target_type}-${conn.target_id}`,
+            type: conn.connection_type
+        }));
+        
+        return { nodes, links };
+    }
+    
+    private updateVisualization(): void {
+        // Update nodes
+        const nodeSelection = this.svg.selectAll('.node')
+            .data(this.nodes, d => d.id);
+        
+        const nodeEnter = nodeSelection.enter()
+            .append('g')
+            .attr('class', 'node')
+            .call(this.drag());
+        
+        nodeEnter.append('circle')
+            .attr('r', d => d.size)
+            .attr('fill', d => this.getNodeColor(d.type));
+        
+        nodeEnter.append('text')
+            .attr('dy', '.35em')
+            .attr('text-anchor', 'middle')
+            .text(d => d.title);
+        
+        // Update links
+        const linkSelection = this.svg.selectAll('.link')
+            .data(this.links);
+        
+        linkSelection.enter()
+            .append('line')
+            .attr('class', 'link')
+            .attr('stroke', '#999')
+            .attr('stroke-opacity', 0.6);
+        
+        // Restart simulation
+        this.simulation.nodes(this.nodes);
+        this.simulation.force('link').links(this.links);
+        this.simulation.restart();
+    }
+}
 ```
 
 ## Data Models
 
-### Note Model
+### Note Metadata Model
 ```typescript
-interface Note {
+interface NoteMetadata {
     id: number;
+    filePath: string;
     title: string;
-    content: string; // Rich text JSON or Markdown
     category: string;
     tags: string[];
-    folderPath: string;
-    scheduledDate?: Date; // For meeting notes, scheduled content
+    created: Date;
+    modified: Date;
+    scheduled?: Date;
+    size: number;
+    wordCount: number;
     isArchived: boolean;
     isPinned: boolean;
     isFavorite: boolean;
+    lastAccessed: Date;
+    lastScanned: Date; // For todo sync
+}
+```
+
+### Todo Model
+```typescript
+interface Todo {
+    id: string; // Composite: filePath:todoId
+    todoId: string; // e.g., "t1", "t2"
+    filePath: string;
+    text: string;
+    isCompleted: boolean;
+    assignedPerson?: string;
+    dueDate?: Date;
     createdAt: Date;
     updatedAt: Date;
-    connections: Connection[];
-    todos: Todo[];
-    extractedDates?: Date[]; // Dates found in content
+    rawText: string; // Original markdown text
 }
 ```
 
@@ -905,1272 +661,134 @@ interface Person {
     notes?: string;
     createdAt: Date;
     updatedAt: Date;
-    connectedNotes: Note[];
-    assignedTodos: Todo[];
 }
 ```
 
-### Todo Model (Reference-based)
-```typescript
-interface Todo {
-    id: string; // Composite ID: noteId-position
-    content: string;
-    isCompleted: boolean;
-    noteId: number;
-    position: number; // Position in note content
-    sourceText: string; // Original checkbox text from note
-    dueDate?: Date;
-    assignedPersonId?: number;
-    extractedBy: 'user' | 'ai';
-    createdAt: Date;
-    updatedAt: Date;
-    
-    // Derived properties
-    linkedNote: Note;
-    assignedPerson?: Person;
-    mentions: TodoMention[]; // Other notes that reference this todo
-}
+## Database Schema
 
-interface TodoMention {
-    id: number;
-    todoReferenceId: string;
-    mentionedInNoteId: number;
-    mentionPosition: number;
-    createdAt: Date;
-}
-
-interface TodoSyncEvent {
-    todoId: string;
-    isCompleted: boolean;
-    affectedNotes: number[];
-    timestamp: Date;
-}
-```
-
-### Connection Model
-```typescript
-interface Connection {
-    id: number;
-    sourceType: 'note' | 'person';
-    sourceId: number;
-    targetType: 'note' | 'person';
-    targetId: number;
-    connectionType: 'mention' | 'reference' | 'link';
-    createdAt: Date;
-}
-```
-
-### Calendar Item Model
-```typescript
-interface CalendarItem {
-    id: string; // Composite ID: type-sourceId
-    type: 'todo' | 'note' | 'meeting' | 'event';
-    title: string;
-    date: Date;
-    endDate?: Date; // For events with duration
-    isAllDay: boolean;
-    isCompleted?: boolean; // For todos
-    priority?: 'low' | 'medium' | 'high';
-    sourceId: number; // ID of the source note/todo
-    sourceType: 'note' | 'todo';
-    assignedPerson?: Person;
-    category?: string;
-    color?: string; // For visual categorization
-    description?: string;
-    location?: string; // For meeting notes
-}
-```
-
-### Calendar View State Model
-```typescript
-interface CalendarViewState {
-    currentView: 'month' | 'week' | 'day' | 'agenda';
-    currentDate: Date;
-    selectedDate?: Date;
-    filters: {
-        showTodos: boolean;
-        showNotes: boolean;
-        showMeetings: boolean;
-        showCompleted: boolean;
-        personFilter?: number;
-        categoryFilter?: string;
-    };
-    dateRange: {
-        start: Date;
-        end: Date;
-    };
-}
-```
-
-## Auto-Save System Implementation
-
-### Real-time Auto-Save Architecture
-
-```typescript
-class AutoSaveManager {
-    private saveQueue = new Map<number, SaveOperation>();
-    private debounceTimer: NodeJS.Timeout | null = null;
-    private readonly SAVE_DELAY = 2000; // 2 seconds
-    private readonly MAX_QUEUE_SIZE = 100;
-    
-    async scheduleAutoSave(noteId: number, content: string, title: string): Promise<void> {
-        // Cancel previous timer
-        if (this.debounceTimer) {
-            clearTimeout(this.debounceTimer);
-        }
-        
-        // Add to save queue
-        this.saveQueue.set(noteId, {
-            noteId,
-            content,
-            title,
-            timestamp: Date.now(),
-            contentHash: this.calculateHash(content)
-        });
-        
-        // Limit queue size
-        if (this.saveQueue.size > this.MAX_QUEUE_SIZE) {
-            await this.flushOldestSaves();
-        }
-        
-        // Schedule debounced save
-        this.debounceTimer = setTimeout(() => {
-            this.executePendingSaves();
-        }, this.SAVE_DELAY);
-    }
-    
-    private async executePendingSaves(): Promise<void> {
-        const saves = Array.from(this.saveQueue.values());
-        this.saveQueue.clear();
-        
-        // Group saves by note to handle rapid edits
-        const groupedSaves = this.groupSavesByNote(saves);
-        
-        // Execute saves in parallel
-        const savePromises = groupedSaves.map(save => this.executeSave(save));
-        await Promise.allSettled(savePromises);
-    }
-    
-    private async executeSave(save: SaveOperation): Promise<void> {
-        try {
-            // Check if content actually changed
-            const currentHash = await this.getCurrentContentHash(save.noteId);
-            if (currentHash === save.contentHash) {
-                return; // No changes to save
-            }
-            
-            // Save to SQLite database
-            await this.database.updateNote(save.noteId, {
-                title: save.title,
-                content: save.content,
-                content_hash: save.contentHash,
-                updated_at: new Date(),
-                last_auto_save: new Date()
-            });
-            
-            // Create version snapshot if significant change
-            if (this.isSignificantChange(save)) {
-                await this.createVersionSnapshot(save);
-            }
-            
-            // Emit save success event
-            this.eventEmitter.emit('note:auto-saved', save.noteId);
-            
-        } catch (error) {
-            // Handle save failure gracefully
-            this.logger.error('Auto-save failed', { noteId: save.noteId, error });
-            this.eventEmitter.emit('note:save-failed', save.noteId, error);
-            
-            // Retry with exponential backoff
-            await this.scheduleRetry(save);
-        }
-    }
-    
-    private isSignificantChange(save: SaveOperation): boolean {
-        // Create version snapshot for significant changes
-        const wordCountDiff = this.calculateWordCountDiff(save);
-        const timeSinceLastVersion = this.getTimeSinceLastVersion(save.noteId);
-        
-        return wordCountDiff > 50 || timeSinceLastVersion > 3600000; // 1 hour
-    }
-}
-
-interface SaveOperation {
-    noteId: number;
-    content: string;
-    title: string;
-    timestamp: number;
-    contentHash: string;
-}
-```
-
-## Error Handling & Resilience
-
-### Comprehensive Error Management Strategy
-
-**Database Resilience:**
-```typescript
-interface DatabaseError {
-    code: string;
-    message: string;
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    recovery: 'retry' | 'rollback' | 'restore' | 'manual';
-    userAction?: string;
-}
-
-class DatabaseManager {
-    private retryPolicy = new ExponentialBackoff();
-    private healthCheck = new HealthMonitor();
-    
-    async executeQuery(query: string, params: any[]): Promise<any> {
-        return this.retryPolicy.execute(async () => {
-            try {
-                return await this.db.prepare(query).all(params);
-            } catch (error) {
-                await this.handleDatabaseError(error);
-                throw error;
-            }
-        });
-    }
-    
-    private async handleDatabaseError(error: any): Promise<void> {
-        // Log error with context
-        await this.auditLogger.logError(error);
-        
-        // Check database integrity
-        if (error.code === 'SQLITE_CORRUPT') {
-            await this.initiateRecovery();
-        }
-        
-        // Update health status
-        this.healthCheck.recordFailure(error);
-    }
-}
-```
-
-**AI Service Resilience:**
-```typescript
-class AIServiceManager {
-    private circuitBreaker = new CircuitBreaker();
-    private contextManager = new AIContextManager();
-    private fallbackService = new LocalAIFallback();
-    private keyManager = new SecureKeyManager();
-    
-    async processRequest(request: AIRequest): Promise<AIResponse> {
-        // Check if AI is configured
-        if (!this.isAIConfigured()) {
-            return this.handleNoAIConfiguration(request);
-        }
-        
-        // Check circuit breaker
-        if (this.circuitBreaker.isOpen()) {
-            return this.fallbackService.process(request);
-        }
-        
-        try {
-            const response = await this.primaryService.process(request);
-            this.circuitBreaker.recordSuccess();
-            return response;
-        } catch (error) {
-            this.circuitBreaker.recordFailure();
-            
-            // Graceful degradation
-            return this.handleAIFailure(request, error);
-        }
-    }
-    
-    private handleNoAIConfiguration(request: AIRequest): AIResponse {
-        // Ensure all manual features work without AI
-        switch (request.type) {
-            case 'todo_extraction':
-                return { todos: [], message: 'AI not configured - manual todo creation available' };
-            case 'insights':
-                return { insights: [], message: 'AI not configured - manual analysis available' };
-            default:
-                return { success: true, message: 'Feature available in manual mode' };
-        }
-    }
-    
-    private handleAIFailure(request: AIRequest, error: Error): AIResponse {
-        // Intelligent fallback based on request type
-        if (request.type === 'todo_extraction') {
-            return this.fallbackService.extractTodos(request.content);
-        }
-        
-        // Log error but don't break core functionality
-        this.logger.warn('AI service unavailable, falling back to manual mode', error);
-        return { success: false, fallback: true, message: 'AI temporarily unavailable' };
-    }
-}
-
-class SecureKeyManager {
-    private keychain = require('keytar');
-    
-    async storeAPIKey(provider: 'openai' | 'gemini' | 'grok', key: string): Promise<void> {
-        await this.keychain.setPassword('notesage-ai', provider, key);
-    }
-    
-    async getAPIKey(provider: string): Promise<string | null> {
-        return await this.keychain.getPassword('notesage-ai', provider);
-    }
-    
-    async deleteAPIKey(provider: string): Promise<void> {
-        await this.keychain.deletePassword('notesage-ai', provider);
-    }
-}
-```
-
-**User Experience Error Recovery:**
-- **Optimistic UI Updates**: Show changes immediately, rollback on failure
-- **Conflict Resolution**: Detect and resolve concurrent edit conflicts
-- **Data Recovery**: Multiple backup strategies with point-in-time recovery
-- **Graceful Degradation**: Core functionality works even when advanced features fail
-
-### User Experience Error Handling
-
-**Data Loss Prevention:**
-- Auto-save functionality
-- Version history maintenance
-- Backup and restore capabilities
-
-**Validation Errors:**
-- Real-time form validation
-- Clear error messages
-- Guided correction suggestions
-
-**Recovery Mechanisms:**
-- Undo/redo functionality
-- Trash/restore for deleted items
-- Data export capabilities
-
-## Security & Privacy Architecture
-
-### Comprehensive Security Strategy
-
-**Multi-Layer Encryption System:**
-```typescript
-class SecurityManager {
-    private masterKey: CryptoKey;
-    private noteEncryption: NoteEncryptionManager;
-    private auditLogger: AuditLogger;
-    private privacyController: PrivacyController;
-    
-    async initializeSecurity(userPassword: string): Promise<void> {
-        // Derive master key from user password
-        this.masterKey = await this.deriveKey(userPassword);
-        
-        // Initialize database encryption (SQLCipher)
-        await this.initializeDatabaseEncryption();
-        
-        // Setup note-level encryption for sensitive content
-        this.noteEncryption = new NoteEncryptionManager(this.masterKey);
-        
-        // Initialize audit logging
-        this.auditLogger = new AuditLogger(this.masterKey);
-        
-        // Setup privacy controls
-        this.privacyController = new PrivacyController();
-    }
-    
-    private async deriveKey(password: string): Promise<CryptoKey> {
-        const encoder = new TextEncoder();
-        const keyMaterial = await crypto.subtle.importKey(
-            'raw',
-            encoder.encode(password),
-            'PBKDF2',
-            false,
-            ['deriveBits', 'deriveKey']
-        );
-        
-        return crypto.subtle.deriveKey(
-            {
-                name: 'PBKDF2',
-                salt: await this.getSalt(),
-                iterations: 100000,
-                hash: 'SHA-256'
-            },
-            keyMaterial,
-            { name: 'AES-GCM', length: 256 },
-            true,
-            ['encrypt', 'decrypt']
-        );
-    }
-}
-
-class NoteEncryptionManager {
-    private encryptionKey: CryptoKey;
-    
-    async encryptSensitiveNote(noteContent: string, noteId: number): Promise<string> {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(noteContent);
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-        
-        const encrypted = await crypto.subtle.encrypt(
-            { name: 'AES-GCM', iv },
-            this.encryptionKey,
-            data
-        );
-        
-        // Store IV with encrypted data
-        const result = new Uint8Array(iv.length + encrypted.byteLength);
-        result.set(iv);
-        result.set(new Uint8Array(encrypted), iv.length);
-        
-        // Log encryption event
-        await this.auditLogger.logEncryption(noteId, 'note_encrypted');
-        
-        return btoa(String.fromCharCode(...result));
-    }
-    
-    async decryptSensitiveNote(encryptedData: string, noteId: number): Promise<string> {
-        const data = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
-        const iv = data.slice(0, 12);
-        const encrypted = data.slice(12);
-        
-        const decrypted = await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv },
-            this.encryptionKey,
-            encrypted
-        );
-        
-        // Log decryption event
-        await this.auditLogger.logDecryption(noteId, 'note_accessed');
-        
-        return new TextDecoder().decode(decrypted);
-    }
-}
-
-class PrivacyController {
-    private privacyLevels = {
-        PUBLIC: 0,      // No encryption, searchable
-        PRIVATE: 1,     // Encrypted, searchable metadata only
-        CONFIDENTIAL: 2, // Fully encrypted, no search
-        SECRET: 3       // Encrypted + additional access controls
-    };
-    
-    async setNotePrivacyLevel(noteId: number, level: number): Promise<void> {
-        await this.database.updateNote(noteId, {
-            privacy_level: level,
-            updated_at: new Date()
-        });
-        
-        // Re-encrypt if needed
-        if (level > this.privacyLevels.PUBLIC) {
-            await this.noteEncryption.encryptNote(noteId);
-        }
-        
-        // Update search index based on privacy level
-        await this.updateSearchIndex(noteId, level);
-    }
-    
-    private async updateSearchIndex(noteId: number, privacyLevel: number): Promise<void> {
-        if (privacyLevel >= this.privacyLevels.CONFIDENTIAL) {
-            // Remove from search index completely
-            await this.searchIndex.removeNote(noteId);
-        } else if (privacyLevel === this.privacyLevels.PRIVATE) {
-            // Index only metadata (title, tags, not content)
-            await this.searchIndex.indexMetadataOnly(noteId);
-        }
-    }
-}
-
-class AuditLogger {
-    async logSecurityEvent(event: SecurityEvent): Promise<void> {
-        const encryptedEvent = await this.encryptAuditEvent(event);
-        
-        await this.database.run(`
-            INSERT INTO security_audit_log (
-                timestamp, event_type, user_id, resource_type, 
-                resource_id, action, encrypted_details, hash
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-            event.timestamp,
-            event.type,
-            event.userId,
-            event.resourceType,
-            event.resourceId,
-            event.action,
-            encryptedEvent,
-            await this.calculateEventHash(event)
-        ]);
-    }
-    
-    async generateSecurityReport(): Promise<SecurityReport> {
-        // Generate tamper-proof security report
-        const events = await this.getAuditEvents();
-        const report = {
-            generatedAt: new Date(),
-            totalEvents: events.length,
-            eventsByType: this.groupEventsByType(events),
-            suspiciousActivity: await this.detectSuspiciousActivity(events),
-            integrityCheck: await this.verifyAuditIntegrity()
-        };
-        
-        return report;
-    }
-}
-```
-
-**Database Security Schema:**
+### Note Metadata Table
 ```sql
--- Add privacy and security columns to notes
-ALTER TABLE notes ADD COLUMN privacy_level INTEGER DEFAULT 0;
-ALTER TABLE notes ADD COLUMN is_encrypted BOOLEAN DEFAULT FALSE;
-ALTER TABLE notes ADD COLUMN encryption_iv TEXT;
-ALTER TABLE notes ADD COLUMN access_count INTEGER DEFAULT 0;
-ALTER TABLE notes ADD COLUMN last_accessed DATETIME;
-
--- Security audit log
-CREATE TABLE security_audit_log (
+CREATE TABLE note_metadata (
     id INTEGER PRIMARY KEY,
-    timestamp DATETIME NOT NULL,
-    event_type TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    resource_type TEXT NOT NULL,
-    resource_id TEXT NOT NULL,
-    action TEXT NOT NULL,
-    encrypted_details TEXT,
-    hash TEXT NOT NULL,
-    ip_address TEXT,
-    user_agent TEXT
+    file_path TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT DEFAULT 'Note',
+    tags TEXT, -- JSON array
+    created DATETIME NOT NULL,
+    modified DATETIME NOT NULL,
+    scheduled DATETIME,
+    size INTEGER DEFAULT 0,
+    word_count INTEGER DEFAULT 0,
+    is_archived BOOLEAN DEFAULT FALSE,
+    is_pinned BOOLEAN DEFAULT FALSE,
+    is_favorite BOOLEAN DEFAULT FALSE,
+    last_accessed DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_scanned DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Privacy settings
-CREATE TABLE privacy_settings (
-    id INTEGER PRIMARY KEY,
-    setting_name TEXT UNIQUE NOT NULL,
-    setting_value TEXT NOT NULL,
-    is_encrypted BOOLEAN DEFAULT FALSE,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Secure key storage
-CREATE TABLE encrypted_keys (
-    id INTEGER PRIMARY KEY,
-    key_name TEXT UNIQUE NOT NULL,
-    encrypted_key TEXT NOT NULL,
-    key_iv TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+-- Full-Text Search Index
+CREATE VIRTUAL TABLE notes_fts USING fts5(
+    title, content, tags,
+    content='',
+    tokenize='porter'
 );
 ```
-```
 
-**Input Sanitization & Validation:**
-```typescript
-class SecurityValidator {
-    static sanitizeContent(content: string): string {
-        return DOMPurify.sanitize(content, {
-            ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'h1', 'h2', 'h3'],
-            ALLOWED_ATTR: ['class', 'id'],
-            FORBID_SCRIPT: true
-        });
-    }
-    
-    static validateApiInput(input: any, schema: JSONSchema): ValidationResult {
-        const validator = new Ajv({ allErrors: true });
-        const validate = validator.compile(schema);
-        
-        if (!validate(input)) {
-            throw new ValidationError(validate.errors);
-        }
-        
-        return { valid: true, sanitized: this.sanitizeObject(input) };
-    }
-}
-```
-
-**Audit Logging:**
-```typescript
-interface AuditEvent {
-    timestamp: Date;
-    userId: string;
-    action: string;
-    resource: string;
-    resourceId: string;
-    metadata: Record<string, any>;
-    ipAddress?: string;
-    userAgent?: string;
-}
-
-class AuditLogger {
-    async logEvent(event: AuditEvent): Promise<void> {
-        const encryptedEvent = await this.encrypt(event);
-        await this.db.run(`
-            INSERT INTO audit_log (timestamp, event_data, hash)
-            VALUES (?, ?, ?)
-        `, [event.timestamp, encryptedEvent, this.calculateHash(event)]);
-    }
-}
-```
-
-## Performance Optimization
-
-### Virtual Scrolling Implementation
-```typescript
-class VirtualizedNoteList extends React.Component {
-    private observer: IntersectionObserver;
-    private cache = new Map<number, NoteItem>();
-    
-    componentDidMount() {
-        this.observer = new IntersectionObserver(
-            this.handleIntersection,
-            { rootMargin: '100px' }
-        );
-    }
-    
-    private handleIntersection = (entries: IntersectionObserverEntry[]) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                this.loadNoteData(entry.target.dataset.noteId);
-            }
-        });
-    };
-    
-    render() {
-        return (
-            <FixedSizeList
-                height={600}
-                itemCount={this.props.noteCount}
-                itemSize={80}
-                itemData={this.props.notes}
-                overscanCount={5}
-            >
-                {this.renderNoteItem}
-            </FixedSizeList>
-        );
-    }
-}
-```
-
-### Search Performance Optimization
-```typescript
-class SearchManager {
-    private searchIndex: FlexSearch.Index;
-    private debouncer = new Debouncer(300);
-    
-    constructor() {
-        this.searchIndex = new FlexSearch.Index({
-            preset: 'performance',
-            tokenize: 'forward',
-            resolution: 9,
-            depth: 4
-        });
-    }
-    
-    async search(query: string): Promise<SearchResult[]> {
-        return this.debouncer.execute(async () => {
-            // Use FTS5 for complex queries
-            if (this.isComplexQuery(query)) {
-                return this.fullTextSearch(query);
-            }
-            
-            // Use in-memory index for simple queries
-            const results = await this.searchIndex.search(query, { limit: 50 });
-            return this.hydrateResults(results);
-        });
-    }
-}
-```
-
-## Accessibility & User Experience
-
-### Keyboard Navigation System
-```typescript
-class KeyboardManager {
-    private shortcuts = new Map<string, KeyboardShortcut>();
-    private contextStack: string[] = [];
-    
-    registerShortcut(context: string, key: string, action: () => void) {
-        const shortcut = new KeyboardShortcut(key, action, context);
-        this.shortcuts.set(`${context}:${key}`, shortcut);
-    }
-    
-    handleKeyDown = (event: KeyboardEvent) => {
-        const currentContext = this.getCurrentContext();
-        const shortcutKey = `${currentContext}:${this.getKeyString(event)}`;
-        
-        const shortcut = this.shortcuts.get(shortcutKey);
-        if (shortcut && shortcut.canExecute()) {
-            event.preventDefault();
-            shortcut.execute();
-        }
-    };
-    
-    // Global shortcuts
-    private initializeGlobalShortcuts() {
-        this.registerShortcut('global', 'cmd+k', () => this.openCommandPalette());
-        this.registerShortcut('global', 'cmd+n', () => this.createNewNote());
-        this.registerShortcut('global', 'cmd+shift+f', () => this.openGlobalSearch());
-        this.registerShortcut('global', 'cmd+/', () => this.showKeyboardHelp());
-    }
-}
-```
-
-### Accessibility Implementation
-```typescript
-class AccessibilityManager {
-    private announcer: LiveAnnouncer;
-    private focusManager: FocusManager;
-    
-    announceChange(message: string, priority: 'polite' | 'assertive' = 'polite') {
-        this.announcer.announce(message, priority);
-    }
-    
-    manageFocus(element: HTMLElement, options?: FocusOptions) {
-        this.focusManager.setFocus(element, {
-            preventScroll: options?.preventScroll ?? false,
-            restoreOnUnmount: options?.restoreOnUnmount ?? true
-        });
-    }
-    
-    // ARIA live regions for dynamic content
-    setupLiveRegions() {
-        const statusRegion = document.createElement('div');
-        statusRegion.setAttribute('aria-live', 'polite');
-        statusRegion.setAttribute('aria-atomic', 'true');
-        statusRegion.className = 'sr-only';
-        document.body.appendChild(statusRegion);
-    }
-}
-```
-
-## Performance at Scale Architecture
-
-### Large Dataset Optimization
-
-```typescript
-class ScalableDataManager {
-    private cache: LRUCache<string, any>;
-    private indexManager: IndexManager;
-    private memoryMonitor: MemoryMonitor;
-    private performanceProfiler: PerformanceProfiler;
-    
-    constructor() {
-        this.cache = new LRUCache({ max: 1000, ttl: 1000 * 60 * 10 }); // 10 min TTL
-        this.indexManager = new IndexManager();
-        this.memoryMonitor = new MemoryMonitor();
-        this.performanceProfiler = new PerformanceProfiler();
-        
-        // Monitor memory usage and adjust cache size
-        this.memoryMonitor.on('high-memory', () => this.reduceCacheSize());
-        this.memoryMonitor.on('low-memory', () => this.increaseCacheSize());
-    }
-    
-    async loadNotesPage(offset: number, limit: number): Promise<Note[]> {
-        const cacheKey = `notes:${offset}:${limit}`;
-        
-        // Check cache first
-        if (this.cache.has(cacheKey)) {
-            return this.cache.get(cacheKey);
-        }
-        
-        // Load from database with optimized query
-        const notes = await this.database.query(`
-            SELECT id, title, content_preview, category, tags, 
-                   updated_at, word_count, is_pinned, is_favorite
-            FROM notes 
-            WHERE is_archived = FALSE
-            ORDER BY 
-                CASE WHEN is_pinned = 1 THEN 0 ELSE 1 END,
-                updated_at DESC
-            LIMIT ? OFFSET ?
-        `, [limit, offset]);
-        
-        // Cache the result
-        this.cache.set(cacheKey, notes);
-        
-        return notes;
-    }
-    
-    async searchNotesOptimized(query: string, filters: SearchFilters): Promise<SearchResult[]> {
-        // Use FTS5 for full-text search with ranking
-        const searchQuery = this.buildOptimizedSearchQuery(query, filters);
-        
-        const results = await this.database.query(`
-            SELECT notes.id, notes.title, notes.category, notes.updated_at,
-                   snippet(notes_fts, 1, '<mark>', '</mark>', '...', 32) as snippet,
-                   rank
-            FROM notes_fts 
-            JOIN notes ON notes.id = notes_fts.rowid
-            WHERE notes_fts MATCH ?
-            AND ${this.buildFilterConditions(filters)}
-            ORDER BY rank
-            LIMIT 100
-        `, [searchQuery]);
-        
-        return results;
-    }
-}
-
-class MemoryMonitor {
-    private checkInterval: NodeJS.Timeout;
-    private thresholds = {
-        high: 1024 * 1024 * 1024, // 1GB
-        critical: 2048 * 1024 * 1024 // 2GB
-    };
-    
-    constructor() {
-        this.startMonitoring();
-    }
-    
-    private startMonitoring(): void {
-        this.checkInterval = setInterval(() => {
-            const usage = process.memoryUsage();
-            
-            if (usage.heapUsed > this.thresholds.critical) {
-                this.emit('critical-memory', usage);
-                this.forceGarbageCollection();
-            } else if (usage.heapUsed > this.thresholds.high) {
-                this.emit('high-memory', usage);
-            }
-        }, 30000); // Check every 30 seconds
-    }
-    
-    private forceGarbageCollection(): void {
-        if (global.gc) {
-            global.gc();
-        }
-    }
-}
-```
-
-## URL Handling System
-
-```typescript
-class URLManager {
-    private urlCache = new Map<string, URLMetadata>();
-    private previewGenerator: URLPreviewGenerator;
-    private securityValidator: URLSecurityValidator;
-    
-    constructor() {
-        this.previewGenerator = new URLPreviewGenerator();
-        this.securityValidator = new URLSecurityValidator();
-    }
-    
-    async processURL(url: string, noteId: number): Promise<URLMetadata> {
-        // Validate URL security first
-        const securityCheck = await this.securityValidator.validate(url);
-        if (!securityCheck.safe) {
-            throw new URLSecurityError(securityCheck.reason);
-        }
-        
-        // Check cache
-        if (this.urlCache.has(url)) {
-            return this.urlCache.get(url);
-        }
-        
-        // Generate preview metadata
-        const metadata = await this.previewGenerator.generate(url);
-        
-        // Store in database and cache
-        await this.storeURLMetadata(url, metadata, noteId);
-        this.urlCache.set(url, metadata);
-        
-        return metadata;
-    }
-    
-    private async storeURLMetadata(url: string, metadata: URLMetadata, noteId: number): Promise<void> {
-        await this.database.run(`
-            INSERT OR REPLACE INTO url_metadata (
-                url, title, description, image_url, site_name, 
-                note_id, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-            url,
-            metadata.title,
-            metadata.description,
-            metadata.imageUrl,
-            metadata.siteName,
-            noteId,
-            new Date(),
-            new Date()
-        ]);
-    }
-}
-
-class URLPreviewGenerator {
-    private timeout = 5000; // 5 second timeout
-    
-    async generate(url: string): Promise<URLMetadata> {
-        try {
-            const response = await fetch(url, {
-                timeout: this.timeout,
-                headers: {
-                    'User-Agent': 'NoteSage/1.0 (URL Preview Bot)'
-                }
-            });
-            
-            const html = await response.text();
-            const metadata = this.parseHTMLMetadata(html);
-            
-            return {
-                url,
-                title: metadata.title || this.extractTitleFromURL(url),
-                description: metadata.description || '',
-                imageUrl: metadata.image || null,
-                siteName: metadata.siteName || this.extractDomainFromURL(url),
-                favicon: metadata.favicon || null,
-                createdAt: new Date()
-            };
-        } catch (error) {
-            // Fallback to basic URL info
-            return {
-                url,
-                title: this.extractTitleFromURL(url),
-                description: '',
-                imageUrl: null,
-                siteName: this.extractDomainFromURL(url),
-                favicon: null,
-                createdAt: new Date(),
-                error: error.message
-            };
-        }
-    }
-    
-    private parseHTMLMetadata(html: string): any {
-        // Parse Open Graph, Twitter Cards, and standard meta tags
-        const metadata = {};
-        
-        // Extract title
-        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-        if (titleMatch) metadata.title = titleMatch[1].trim();
-        
-        // Extract meta tags
-        const metaRegex = /<meta[^>]+>/gi;
-        const metaTags = html.match(metaRegex) || [];
-        
-        metaTags.forEach(tag => {
-            const propertyMatch = tag.match(/property=["']([^"']+)["'][^>]*content=["']([^"']+)["']/i);
-            const nameMatch = tag.match(/name=["']([^"']+)["'][^>]*content=["']([^"']+)["']/i);
-            
-            if (propertyMatch) {
-                const [, property, content] = propertyMatch;
-                if (property === 'og:title') metadata.title = content;
-                if (property === 'og:description') metadata.description = content;
-                if (property === 'og:image') metadata.image = content;
-                if (property === 'og:site_name') metadata.siteName = content;
-            }
-            
-            if (nameMatch) {
-                const [, name, content] = nameMatch;
-                if (name === 'description') metadata.description = content;
-                if (name === 'twitter:title') metadata.title = metadata.title || content;
-                if (name === 'twitter:description') metadata.description = metadata.description || content;
-                if (name === 'twitter:image') metadata.image = metadata.image || content;
-            }
-        });
-        
-        return metadata;
-    }
-}
-
-class URLSecurityValidator {
-    private blockedDomains = new Set([
-        'malware-site.com',
-        'phishing-site.com'
-        // Add more as needed
-    ]);
-    
-    private suspiciousPatterns = [
-        /bit\.ly\/[a-zA-Z0-9]+/,
-        /tinyurl\.com\/[a-zA-Z0-9]+/,
-        // Add more suspicious URL patterns
-    ];
-    
-    async validate(url: string): Promise<SecurityValidation> {
-        try {
-            const urlObj = new URL(url);
-            
-            // Check blocked domains
-            if (this.blockedDomains.has(urlObj.hostname)) {
-                return {
-                    safe: false,
-                    reason: 'Domain is blocked for security reasons'
-                };
-            }
-            
-            // Check suspicious patterns
-            for (const pattern of this.suspiciousPatterns) {
-                if (pattern.test(url)) {
-                    return {
-                        safe: false,
-                        reason: 'URL matches suspicious pattern'
-                    };
-                }
-            }
-            
-            // Check protocol
-            if (!['http:', 'https:'].includes(urlObj.protocol)) {
-                return {
-                    safe: false,
-                    reason: 'Only HTTP and HTTPS URLs are allowed'
-                };
-            }
-            
-            return { safe: true };
-        } catch (error) {
-            return {
-                safe: false,
-                reason: 'Invalid URL format'
-            };
-        }
-    }
-}
-```
-
-**Performance & URL Database Schema:**
+### Todo References Table
 ```sql
--- URL metadata storage
-CREATE TABLE url_metadata (
-    id INTEGER PRIMARY KEY,
-    url TEXT UNIQUE NOT NULL,
-    title TEXT,
-    description TEXT,
-    image_url TEXT,
-    site_name TEXT,
-    favicon TEXT,
-    note_id INTEGER,
+CREATE TABLE todo_references (
+    id TEXT PRIMARY KEY, -- Composite: filePath:todoId
+    todo_id TEXT NOT NULL, -- e.g., "t1", "t2"
+    file_path TEXT NOT NULL,
+    text TEXT NOT NULL,
+    is_completed BOOLEAN DEFAULT FALSE,
+    assigned_person TEXT,
+    due_date DATE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE SET NULL
+    FOREIGN KEY (file_path) REFERENCES note_metadata(file_path) ON DELETE CASCADE
 );
 
--- URL security log
-CREATE TABLE url_security_log (
-    id INTEGER PRIMARY KEY,
-    url TEXT NOT NULL,
-    validation_result TEXT NOT NULL, -- 'safe', 'blocked', 'suspicious'
-    reason TEXT,
-    checked_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Performance monitoring
-CREATE TABLE performance_metrics (
-    id INTEGER PRIMARY KEY,
-    metric_name TEXT NOT NULL,
-    metric_value REAL NOT NULL,
-    context TEXT, -- JSON with additional context
-    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Performance indexes
-CREATE INDEX idx_url_metadata_note_id ON url_metadata(note_id);
-CREATE INDEX idx_url_metadata_url ON url_metadata(url);
-CREATE INDEX idx_performance_metrics_name ON performance_metrics(metric_name);
-CREATE INDEX idx_performance_metrics_recorded ON performance_metrics(recorded_at);
+CREATE INDEX idx_todo_file_path ON todo_references(file_path);
+CREATE INDEX idx_todo_completed ON todo_references(is_completed);
+CREATE INDEX idx_todo_due_date ON todo_references(due_date);
 ```
+
+### People Table
+```sql
+CREATE TABLE people (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    company TEXT,
+    title TEXT,
+    linkedin_url TEXT,
+    avatar_url TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Connections Table
+```sql
+CREATE TABLE connections (
+    id INTEGER PRIMARY KEY,
+    source_type TEXT NOT NULL, -- 'note' or 'person'
+    source_id TEXT NOT NULL, -- file_path for notes, id for people
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    connection_type TEXT DEFAULT 'mention',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_connections_source ON connections(source_type, source_id);
+CREATE INDEX idx_connections_target ON connections(target_type, target_id);
+```
+
+## Error Handling
+
+### File System Error Handling
+- **File not found**: Graceful degradation with user notification
+- **Permission errors**: Clear error messages with suggested solutions
+- **Disk space**: Monitor available space and warn users
+- **Corruption**: Automatic backup restoration options
+
+### Database Error Handling
+- **Connection failures**: Retry logic with exponential backoff
+- **Schema migrations**: Safe migration with rollback capability
+- **Constraint violations**: User-friendly error messages
+- **Performance issues**: Query optimization and monitoring
+
+### Sync Error Handling
+- **Todo sync conflicts**: Manual resolution interface
+- **File modification conflicts**: Three-way merge options
+- **Network failures**: Offline queue with retry logic
 
 ## Testing Strategy
 
 ### Unit Testing
-
-**Backend Testing:**
-- API endpoint testing with Jest/Supertest
-- Database operation testing
-- AI service integration testing
-- File system operation testing
-
-**Frontend Testing:**
-- React component testing with React Testing Library
-- State management testing
-- User interaction testing
-- Rich text editor testing
+- File management operations
+- Todo parsing and sync logic
+- Search functionality
+- Database operations
+- AI integration components
 
 ### Integration Testing
+- End-to-end note creation and editing
+- Todo synchronization across file and database
+- Search accuracy and performance
+- Graph visualization data flow
 
-**Electron Integration:**
-- Main/renderer process communication
-- IPC message handling
-- Native API integration
-- File system operations
+### Performance Testing
+- Large file handling (>10MB notes)
+- Database query performance with 10k+ notes
+- Search response times
+- Memory usage monitoring
 
-**End-to-End Testing:**
-- Complete user workflows
-- Cross-platform compatibility
-- Performance testing
-- Data persistence testing
-
-### Platform Testing
-
-**Cross-Platform Compatibility:**
-- Windows (10, 11)
-- macOS (10.15+)
-- Linux (Ubuntu, Fedora, Arch)
-
-**Performance Testing:**
-- Large dataset handling
-- Memory usage optimization
-- Startup time optimization
-- Search performance
-
-### Security Testing
-
-**Data Security:**
-- Local data encryption
-- API key storage security
-- Input sanitization
-- XSS prevention
-
-**Application Security:**
-- Context isolation verification
-- Node.js integration security
-- File system access controls
-- Network request validation
-
-## Deployment and Distribution
-
-### Build Process
-
-**Development Build:**
-- Hot reloading for both frontend and backend
-- Source maps for debugging
-- Development database seeding
-
-**Production Build:**
-- Code minification and optimization
-- Asset bundling and compression
-- Database migration packaging
-- Security hardening
-
-### Distribution Strategy
-
-**Platform-Specific Installers:**
-- Windows: NSIS installer (.exe)
-- macOS: DMG with app bundle
-- Linux: AppImage, deb, rpm packages
-
-**Auto-Update Mechanism:**
-- Electron-updater integration
-- Incremental updates
-- Rollback capabilities
-- User notification system
-
-### Installation Flow
-
-**First Launch Setup:**
-```typescript
-class FirstLaunchManager {
-    async initializeApplication(): Promise<void> {
-        try {
-            // Step 1: Data directory selection
-            const dataDirectory = await this.selectDataDirectory();
-            
-            // Step 2: Validate directory permissions
-            await this.validateDirectoryAccess(dataDirectory);
-            
-            // Step 3: Database initialization
-            await this.initializeDatabase(dataDirectory);
-            
-            // Step 4: Run initial migrations
-            await this.runDatabaseMigrations();
-            
-            // Step 5: Default configuration setup
-            await this.setupDefaultConfiguration();
-            
-            // Step 6: Optional AI provider configuration
-            await this.showAIConfigurationDialog();
-            
-        } catch (error) {
-            await this.handleSetupError(error);
-        }
-    }
-    
-    private async selectDataDirectory(): Promise<string> {
-        const { dialog } = require('electron');
-        const result = await dialog.showOpenDialog({
-            properties: ['openDirectory', 'createDirectory'],
-            title: 'Select Data Directory for NoteSage',
-            message: 'Choose where to store your notes and data',
-            defaultPath: path.join(os.homedir(), 'NoteSage')
-        });
-        
-        if (result.canceled) {
-            throw new Error('Data directory selection canceled');
-        }
-        
-        return result.filePaths[0];
-    }
-    
-    private async validateDirectoryAccess(directory: string): Promise<void> {
-        try {
-            // Test write permissions
-            const testFile = path.join(directory, '.write-test');
-            await fs.writeFile(testFile, 'test');
-            await fs.unlink(testFile);
-        } catch (error) {
-            throw new Error(`Directory not writable: ${directory}. Please select a different location.`);
-        }
-    }
-    
-    private async handleSetupError(error: Error): Promise<void> {
-        const { dialog } = require('electron');
-        
-        const troubleshootingGuide = this.generateTroubleshootingGuide(error);
-        
-        await dialog.showErrorBox(
-            'Setup Failed',
-            `${error.message}\n\nTroubleshooting:\n${troubleshootingGuide}`
-        );
-        
-        // Offer to retry or exit
-        const choice = await dialog.showMessageBox({
-            type: 'error',
-            buttons: ['Retry Setup', 'Exit Application'],
-            defaultId: 0,
-            message: 'Setup failed. Would you like to try again?'
-        });
-        
-        if (choice.response === 0) {
-            await this.initializeApplication();
-        } else {
-            app.quit();
-        }
-    }
-}
-```
-
-**Database Relocation System:**
-```typescript
-class DatabaseManager {
-    async relocateDatabase(newPath: string): Promise<void> {
-        const currentPath = this.getCurrentDatabasePath();
-        
-        try {
-            // Step 1: Validate new location
-            await this.validateDirectoryAccess(newPath);
-            
-            // Step 2: Close current database connections
-            await this.closeAllConnections();
-            
-            // Step 3: Copy database file safely
-            const newDbPath = path.join(newPath, 'notesage.db');
-            await fs.copyFile(currentPath, newDbPath);
-            
-            // Step 4: Verify integrity of copied database
-            await this.verifyDatabaseIntegrity(newDbPath);
-            
-            // Step 5: Update configuration
-            await this.updateDatabasePath(newDbPath);
-            
-            // Step 6: Remove old database file
-            await fs.unlink(currentPath);
-            
-            // Step 7: Reconnect to new database
-            await this.initializeDatabase(newDbPath);
-            
-        } catch (error) {
-            // Rollback on failure
-            await this.rollbackRelocation(currentPath);
-            throw new Error(`Database relocation failed: ${error.message}`);
-        }
-    }
-}
-```
-
-**Update Process:**
-1. Background update checking with user notification
-2. Download and cryptographic verification
-3. Installation with automatic restart
-4. Database migration execution if needed
-5. Configuration migration and validation
-6. Rollback capability if update fails
+### User Acceptance Testing
+- Note-taking workflows
+- Todo management scenarios
+- Search and discovery tasks
+- Knowledge graph navigation

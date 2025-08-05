@@ -63,15 +63,20 @@ This feature enables NoteSage to run as a native desktop application, providing 
 
 #### Acceptance Criteria
 
-1. WHEN AI extracts todos from notes THEN the system SHALL display them in a dedicated todos view
-2. WHEN the user marks a todo as complete THEN the system SHALL update the status and timestamp
-3. WHEN the user views a todo THEN the system SHALL show which note it came from
-4. WHEN the user manually adds a todo THEN the system SHALL require linking the todo to a specific note
-5. IF a note is deleted THEN the system SHALL preserve associated todos with a note reference
-6. WHEN the user marks a todo as complete THEN the system SHALL update all references to that todo across notes and common pages
-7. WHEN the user creates a todo view THEN the system SHALL allow filtering todos based on search criteria of pages with option to include only pending todos
-8. WHEN the user accesses calendar view THEN the system SHALL display todos with due dates, notes with dates, and other time-based content in a calendar format
-9. WHEN the user assigns a todo to a person THEN the system SHALL link the todo to that person and show it in their profile
+1. WHEN the user creates a todo THEN the system SHALL use the format "- [ ][t1] <text> @<person> <date>" with auto-generated unique IDs per note
+2. WHEN the user saves a note THEN the system SHALL immediately scan for todo items using the ID-based format and update the todo index in real-time
+3. WHEN the user clicks manual sync THEN the system SHALL scan only notes modified since last scan timestamp and update todo relationships
+4. WHEN the system generates todo IDs THEN the system SHALL create note-scoped unique identifiers (t1, t2, t3, etc.) that remain stable even when note content changes
+5. WHEN the user marks a todo as complete THEN the system SHALL update the checkbox to [x] and update the database status using the composite key (note_path + todo_id)
+6. WHEN the user views a todo THEN the system SHALL show which note it came from and preserve the stable todo ID reference
+7. WHEN parsing todos THEN the system SHALL extract optional @person mentions and date information from the structured todo format
+8. WHEN the system tracks todos THEN the system SHALL maintain last_scanned timestamp per note to avoid unnecessary re-processing during manual sync
+9. WHEN the user creates a todo view THEN the system SHALL allow filtering todos based on search criteria with option to include only pending todos
+10. WHEN the user accesses calendar view THEN the system SHALL display todos with due dates extracted from the todo format in a calendar interface
+11. WHEN the user assigns a todo to a person using @mention THEN the system SHALL link the todo to that person and show it in their profile
+12. WHEN AI extracts todos from notes THEN the system SHALL automatically assign unique IDs and format them according to the standard todo format
+13. IF a note is deleted THEN the system SHALL preserve associated todos with note reference but mark the source as unavailable
+14. WHEN displaying todos THEN the system SHALL show extracted person assignments and due dates parsed from the structured format
 
 ### Requirement 4
 

@@ -120,7 +120,7 @@ This feature enables NoteSage to run as a native desktop application, providing 
 
 #### Acceptance Criteria
 
-1. WHEN installing the desktop application THEN the system SHALL provide platform-specific installers (Windows, macOS, Linux)
+1. WHEN installing the desktop application THEN the system SHALL provide platform-specific installers for Ubuntu Linux and macOS with auto-update capabilities
 2. WHEN first launching the application THEN the system SHALL automatically handle database initialization
 3. WHEN the application starts THEN the system SHALL automatically run necessary database migrations
 4. WHEN environment setup is needed THEN the system SHALL provide clear documentation and automated setup
@@ -147,7 +147,7 @@ This feature enables NoteSage to run as a native desktop application, providing 
 
 #### Acceptance Criteria
 
-1. WHEN installing the server THEN the system SHALL provide standalone server installation packages for different platforms (Windows, macOS, Linux)
+1. WHEN installing the server THEN the system SHALL provide Ubuntu Linux installation packages with automated installer, configuration wizard, and upgrade system
 2. WHEN the server starts THEN the system SHALL initialize the database and create necessary tables and indexes
 3. WHEN configuring the server THEN the system SHALL allow setting up database connection, port, authentication method, and user management
 4. WHEN managing users THEN the system SHALL provide user creation, authentication, and authorization capabilities

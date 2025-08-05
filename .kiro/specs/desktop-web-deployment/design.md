@@ -122,11 +122,12 @@ graph TB
 ### Multi-Platform Strategy
 
 **Phase 1: Desktop Client + Standalone Server (Current Focus)**
-- Build desktop client application (Electron-based)
-- Build standalone NoteSage server (Go with Gin/Echo framework)
+- Build desktop client application (Electron-based for Ubuntu Linux & macOS)
+- Build standalone NoteSage server (Go with Gin/Echo framework for Ubuntu)
+- Create installers and auto-update systems for both client and server
 - Establish clean client-server separation via REST API
 - Server supports multiple concurrent users
-- Manual server installation and configuration
+- Automated installation, configuration, and upgrade processes
 
 **Phase 2: Multi-Platform Clients (Future)**
 - Web client connecting to same server API
@@ -148,7 +149,7 @@ graph TB
 - **Database management**: GORM for PostgreSQL/SQLite database operations
 - **REST API**: High-performance HTTP API using Gin or Echo framework
 - **WebSocket support**: Gorilla WebSocket for real-time collaborative features
-- **Cross-platform**: Single codebase compiles to Windows, macOS, Linux binaries
+- **Cross-platform**: Single codebase compiles to Windows, macOS, Linux binaries (Ubuntu primary target)
 
 **Database Strategy:**
 - **PostgreSQL**: Primary choice for multi-user scenarios with full-text search
@@ -175,11 +176,12 @@ graph TB
 
 **Deployment Flexibility:**
 - **Single binary**: Download and run one executable file
-- **Cross-compilation**: Build binaries for all platforms from CI/CD
+- **Primary target**: Ubuntu Linux server deployment
+- **Cross-compilation**: Build binaries for Windows, macOS, Linux from CI/CD
 - **Local installation**: Install on local machine or network server
 - **Network access**: Multiple users connect to same server instance
 - **Cloud deployment**: Same binary runs in cloud with environment config
-- **Docker support**: Containerized deployment for easy scaling
+- **Docker support**: Ubuntu-based containerized deployment for easy scaling
 - **Configuration**: Environment variables and config files for different scenarios
 
 **Data Management:**
@@ -269,6 +271,282 @@ func handleWebSocket(c *gin.Context) {
 - **Logrus**: Structured logging
 - **Testify**: Testing framework
 - **Air**: Hot reload for development
+
+### Installation and Upgrade System
+
+**Desktop Client Installers (Ubuntu & macOS):**
+
+*Ubuntu Linux (.deb package):*
+```bash
+# Package structure
+notesage-desktop_1.0.0_amd64.deb
+├── DEBIAN/
+│   ├── control          # Package metadata
+│   ├── postinst         # Post-installation script
+│   ├── prerm           # Pre-removal script
+│   └── postrm          # Post-removal script
+├── usr/
+│   ├── bin/
+│   │   └── notesage-desktop
+│   ├── share/
+│   │   ├── applications/
+│   │   │   └── notesage.desktop
+│   │   └── icons/
+│   │       └── notesage.png
+│   └── lib/
+│       └── notesage/
+│           └── resources/
+```
+
+*macOS (.dmg installer):*
+```bash
+# Package structure
+NoteSage-1.0.0.dmg
+├── NoteSage.app/
+│   ├── Contents/
+│   │   ├── Info.plist
+│   │   ├── MacOS/
+│   │   │   └── NoteSage
+│   │   └── Resources/
+│   │       └── app.asar
+└── Applications (symlink)
+```
+
+**Server Installer (Ubuntu):**
+
+*Installation Script:*
+```bash
+#!/bin/bash
+# notesage-server-install.sh
+
+set -e
+
+# Check system requirements
+check_requirements() {
+    echo "Checking system requirements..."
+    
+    # Check Ubuntu version
+    if ! lsb_release -d | grep -q "Ubuntu"; then
+        echo "Error: This installer requires Ubuntu Linux"
+        exit 1
+    fi
+    
+    # Check for required packages
+    command -v systemctl >/dev/null 2>&1 || { echo "systemd required"; exit 1; }
+}
+
+# Install PostgreSQL if needed
+install_database() {
+    echo "Setting up database..."
+    
+    if ! command -v psql >/dev/null 2>&1; then
+        sudo apt update
+        sudo apt install -y postgresql postgresql-contrib
+        sudo systemctl enable postgresql
+        sudo systemctl start postgresql
+    fi
+    
+    # Create notesage database and user
+    sudo -u postgres createdb notesage 2>/dev/null || true
+    sudo -u postgres createuser notesage 2>/dev/null || true
+    sudo -u postgres psql -c "ALTER USER notesage WITH PASSWORD 'notesage_default_password';"
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE notesage TO notesage;"
+}
+
+# Install NoteSage server
+install_server() {
+    echo "Installing NoteSage server..."
+    
+    # Create notesage user
+    sudo useradd -r -s /bin/false notesage 2>/dev/null || true
+    
+    # Create directories
+    sudo mkdir -p /opt/notesage
+    sudo mkdir -p /etc/notesage
+    sudo mkdir -p /var/log/notesage
+    sudo mkdir -p /var/lib/notesage
+    
+    # Copy binary
+    sudo cp notesage-server /opt/notesage/
+    sudo chmod +x /opt/notesage/notesage-server
+    
+    # Copy configuration
+    sudo cp config.yaml /etc/notesage/
+    
+    # Set permissions
+    sudo chown -R notesage:notesage /var/log/notesage
+    sudo chown -R notesage:notesage /var/lib/notesage
+    sudo chown -R root:notesage /etc/notesage
+    sudo chmod 640 /etc/notesage/config.yaml
+}
+
+# Create systemd service
+create_service() {
+    echo "Creating systemd service..."
+    
+    sudo tee /etc/systemd/system/notesage.service > /dev/null <<EOF
+[Unit]
+Description=NoteSage Server
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=notesage
+Group=notesage
+WorkingDirectory=/opt/notesage
+ExecStart=/opt/notesage/notesage-server --config /etc/notesage/config.yaml
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable notesage
+}
+
+# Main installation
+main() {
+    check_requirements
+    install_database
+    install_server
+    create_service
+    
+    echo "NoteSage server installed successfully!"
+    echo "Start with: sudo systemctl start notesage"
+    echo "Check status: sudo systemctl status notesage"
+    echo "View logs: sudo journalctl -u notesage -f"
+}
+
+main "$@"
+```
+
+**Auto-Update System:**
+
+*Desktop Client (Electron-updater):*
+```typescript
+class AutoUpdater {
+    private updater: AppUpdater;
+    
+    constructor() {
+        this.updater = autoUpdater;
+        this.setupUpdateHandlers();
+    }
+    
+    private setupUpdateHandlers(): void {
+        this.updater.checkForUpdatesAndNotify();
+        
+        this.updater.on('update-available', (info) => {
+            this.showUpdateNotification(info);
+        });
+        
+        this.updater.on('update-downloaded', () => {
+            this.showRestartDialog();
+        });
+        
+        this.updater.on('error', (error) => {
+            console.error('Update error:', error);
+        });
+    }
+    
+    async checkForUpdates(): Promise<void> {
+        try {
+            await this.updater.checkForUpdates();
+        } catch (error) {
+            console.error('Failed to check for updates:', error);
+        }
+    }
+    
+    async downloadUpdate(): Promise<void> {
+        await this.updater.downloadUpdate();
+    }
+    
+    restartAndInstall(): void {
+        this.updater.quitAndInstall();
+    }
+}
+```
+
+*Server Update Script:*
+```bash
+#!/bin/bash
+# notesage-server-update.sh
+
+set -e
+
+CURRENT_VERSION=$(notesage-server --version 2>/dev/null || echo "unknown")
+LATEST_VERSION=$(curl -s https://api.github.com/repos/notesage/server/releases/latest | jq -r .tag_name)
+
+if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+    echo "Updating NoteSage server from $CURRENT_VERSION to $LATEST_VERSION"
+    
+    # Stop service
+    sudo systemctl stop notesage
+    
+    # Backup current binary
+    sudo cp /opt/notesage/notesage-server /opt/notesage/notesage-server.backup
+    
+    # Download new version
+    wget -O /tmp/notesage-server "https://github.com/notesage/server/releases/latest/download/notesage-server-linux-amd64"
+    
+    # Install new binary
+    sudo cp /tmp/notesage-server /opt/notesage/notesage-server
+    sudo chmod +x /opt/notesage/notesage-server
+    
+    # Run database migrations
+    sudo -u notesage /opt/notesage/notesage-server migrate --config /etc/notesage/config.yaml
+    
+    # Start service
+    sudo systemctl start notesage
+    
+    echo "Update completed successfully!"
+else
+    echo "NoteSage server is already up to date ($CURRENT_VERSION)"
+fi
+```
+
+**Configuration Management:**
+
+*Server Configuration (YAML):*
+```yaml
+# /etc/notesage/config.yaml
+server:
+  host: "0.0.0.0"
+  port: 8080
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+
+database:
+  type: "postgres"  # or "sqlite"
+  host: "localhost"
+  port: 5432
+  name: "notesage"
+  user: "notesage"
+  password: "notesage_default_password"
+  ssl_mode: "disable"
+
+auth:
+  jwt_secret: "your-jwt-secret-here"
+  session_timeout: "24h"
+
+logging:
+  level: "info"
+  file: "/var/log/notesage/server.log"
+  max_size: 100  # MB
+  max_backups: 5
+
+features:
+  ai_enabled: true
+  websocket_enabled: true
+  file_uploads: true
+  max_upload_size: "10MB"
+```
 
 ### Database Schema Structure
 

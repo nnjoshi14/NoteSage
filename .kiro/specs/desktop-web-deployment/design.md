@@ -8,7 +8,7 @@ The design follows a hybrid architecture where an Express server runs embedded w
 
 ## Architecture
 
-### High-Level Architecture
+### Offline-First Architecture
 
 ```mermaid
 graph TB
@@ -19,12 +19,15 @@ graph TB
             DB[(SQLite + SQLCipher)]
             IDX[Search Index FTS5]
             CACHE[LRU Cache]
+            OFFLINE[Offline Queue]
+            CONFLICT[Conflict Resolver]
         end
         subgraph "Service Layer"
             FS[File System Manager]
             AI[AI Context Manager]
-            SYNC[Sync Engine]
+            SYNC[Offline-First Sync Engine]
             AUDIT[Audit Logger]
+            CONN[Connection Monitor]
         end
     end
     
@@ -90,21 +93,252 @@ graph TB
 - Preload critical data during splash screen
 - Use service workers for background tasks
 
-### Process Architecture
+### Offline-First Process Architecture
 
 **Main Process Responsibilities:**
 - Application lifecycle management
 - Express server hosting
-- Database operations (SQLite)
+- Database operations (SQLite) - fully offline capable
 - File system operations
 - Native OS integration
 - Security and sandboxing
+- **Offline queue management**
+- **Conflict resolution**
+- **Background sync coordination**
 
 **Renderer Process Responsibilities:**
 - React UI rendering
 - User interaction handling
 - API communication with embedded Express server
 - Client-side state management
+- **Offline state management**
+- **Optimistic UI updates**
+- **Connection status monitoring**
+
+### Offline-First Sync Engine
+
+```typescript
+class OfflineFirstSyncEngine {
+    private offlineQueue: OfflineOperationQueue;
+    private conflictResolver: ConflictResolver;
+    private connectionMonitor: ConnectionMonitor;
+    private syncState: SyncStateManager;
+    
+    constructor() {
+        this.offlineQueue = new OfflineOperationQueue();
+        this.conflictResolver = new ConflictResolver();
+        this.connectionMonitor = new ConnectionMonitor();
+        this.syncState = new SyncStateManager();
+        
+        // Monitor connection changes
+        this.connectionMonitor.on('online', () => this.processPendingOperations());
+        this.connectionMonitor.on('offline', () => this.enableOfflineMode());
+    }
+    
+    async executeOperation(operation: DataOperation): Promise<OperationResult> {
+        // Always execute locally first (offline-first)
+        const localResult = await this.executeLocally(operation);
+        
+        if (this.connectionMonitor.isOnline()) {
+            try {
+                // Attempt immediate sync if online
+                await this.syncOperation(operation);
+                return { ...localResult, synced: true };
+            } catch (error) {
+                // Queue for later if sync fails
+                await this.offlineQueue.enqueue(operation);
+                return { ...localResult, synced: false, queued: true };
+            }
+        } else {
+            // Queue for later sync when offline
+            await this.offlineQueue.enqueue(operation);
+            return { ...localResult, synced: false, queued: true };
+        }
+    }
+    
+    private async executeLocally(operation: DataOperation): Promise<OperationResult> {
+        // All operations work offline-first
+        switch (operation.type) {
+            case 'CREATE_NOTE':
+                return await this.createNoteLocally(operation);
+            case 'UPDATE_NOTE':
+                return await this.updateNoteLocally(operation);
+            case 'DELETE_NOTE':
+                return await this.deleteNoteLocally(operation);
+            case 'UPDATE_TODO':
+                return await this.updateTodoLocally(operation);
+            default:
+                throw new Error(`Unknown operation type: ${operation.type}`);
+        }
+    }
+    
+    private async processPendingOperations(): Promise<void> {
+        const pendingOps = await this.offlineQueue.getAllPending();
+        
+        for (const operation of pendingOps) {
+            try {
+                await this.syncOperation(operation);
+                await this.offlineQueue.markCompleted(operation.id);
+            } catch (error) {
+                if (this.isConflictError(error)) {
+                    await this.handleConflict(operation, error);
+                } else {
+                    // Retry later
+                    await this.offlineQueue.incrementRetryCount(operation.id);
+                }
+            }
+        }
+    }
+    
+    private async handleConflict(operation: DataOperation, conflict: ConflictError): Promise<void> {
+        const resolution = await this.conflictResolver.resolve(operation, conflict);
+        
+        switch (resolution.strategy) {
+            case 'LOCAL_WINS':
+                await this.forceSyncOperation(operation);
+                break;
+            case 'REMOTE_WINS':
+                await this.applyRemoteChanges(conflict.remoteData);
+                break;
+            case 'MERGE':
+                const merged = await this.mergeChanges(operation, conflict.remoteData);
+                await this.syncOperation(merged);
+                break;
+            case 'USER_DECISION':
+                await this.promptUserForResolution(operation, conflict);
+                break;
+        }
+    }
+}
+
+class ConflictResolver {
+    async resolve(localOperation: DataOperation, conflict: ConflictError): Promise<ConflictResolution> {
+        // Automatic conflict resolution strategies
+        if (this.canAutoResolve(localOperation, conflict)) {
+            return this.autoResolve(localOperation, conflict);
+        }
+        
+        // For complex conflicts, create a resolution UI
+        return this.createUserResolutionPrompt(localOperation, conflict);
+    }
+    
+    private canAutoResolve(local: DataOperation, conflict: ConflictError): boolean {
+        // Simple heuristics for auto-resolution
+        if (local.type === 'UPDATE_NOTE' && conflict.type === 'CONTENT_CONFLICT') {
+            // Can merge if changes are in different sections
+            return !this.hasOverlappingChanges(local.data, conflict.remoteData);
+        }
+        
+        if (local.type === 'UPDATE_TODO' && conflict.type === 'STATUS_CONFLICT') {
+            // Todo status conflicts: most recent change wins
+            return true;
+        }
+        
+        return false;
+    }
+    
+    private async mergeChanges(local: DataOperation, remote: any): Promise<DataOperation> {
+        // Intelligent merging based on operation type
+        if (local.type === 'UPDATE_NOTE') {
+            return this.mergeNoteContent(local, remote);
+        }
+        
+        throw new Error('Cannot merge this operation type');
+    }
+    
+    private async mergeNoteContent(local: DataOperation, remote: any): Promise<DataOperation> {
+        // Use diff-merge algorithm for note content
+        const merged = this.diffMerge(local.data.content, remote.content);
+        
+        return {
+            ...local,
+            data: {
+                ...local.data,
+                content: merged,
+                mergedAt: new Date(),
+                mergeSource: 'auto'
+            }
+        };
+    }
+}
+
+class OfflineOperationQueue {
+    private db: Database;
+    
+    async enqueue(operation: DataOperation): Promise<void> {
+        await this.db.run(`
+            INSERT INTO offline_operations (
+                id, type, data, created_at, retry_count, status
+            ) VALUES (?, ?, ?, ?, 0, 'pending')
+        `, [
+            operation.id,
+            operation.type,
+            JSON.stringify(operation.data),
+            new Date().toISOString()
+        ]);
+    }
+    
+    async getAllPending(): Promise<DataOperation[]> {
+        const rows = await this.db.all(`
+            SELECT * FROM offline_operations 
+            WHERE status = 'pending' 
+            ORDER BY created_at ASC
+        `);
+        
+        return rows.map(row => ({
+            id: row.id,
+            type: row.type,
+            data: JSON.parse(row.data),
+            createdAt: new Date(row.created_at),
+            retryCount: row.retry_count
+        }));
+    }
+    
+    async markCompleted(operationId: string): Promise<void> {
+        await this.db.run(`
+            UPDATE offline_operations 
+            SET status = 'completed', completed_at = ? 
+            WHERE id = ?
+        `, [new Date().toISOString(), operationId]);
+    }
+}
+```
+
+**Offline Database Schema:**
+```sql
+-- Queue for offline operations
+CREATE TABLE offline_operations (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    data TEXT NOT NULL, -- JSON
+    created_at DATETIME NOT NULL,
+    completed_at DATETIME,
+    retry_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'pending', -- pending, completed, failed
+    error_message TEXT
+);
+
+-- Conflict resolution log
+CREATE TABLE conflict_resolutions (
+    id INTEGER PRIMARY KEY,
+    operation_id TEXT NOT NULL,
+    conflict_type TEXT NOT NULL,
+    resolution_strategy TEXT NOT NULL,
+    local_data TEXT, -- JSON
+    remote_data TEXT, -- JSON
+    merged_data TEXT, -- JSON
+    resolved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    resolved_by TEXT DEFAULT 'auto'
+);
+
+-- Connection status log
+CREATE TABLE connection_log (
+    id INTEGER PRIMARY KEY,
+    status TEXT NOT NULL, -- online, offline
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    duration INTEGER -- milliseconds offline
+);
+```
 
 ### Communication Patterns
 
@@ -1009,30 +1243,216 @@ class SecureKeyManager {
 - Trash/restore for deleted items
 - Data export capabilities
 
-## Security Architecture
+## Security & Privacy Architecture
 
-### Data Protection Strategy
+### Comprehensive Security Strategy
 
-**Encryption at Rest:**
+**Multi-Layer Encryption System:**
 ```typescript
-class SecureDataManager {
-    private cipher: SQLCipher;
-    private keyManager: KeychainManager;
+class SecurityManager {
+    private masterKey: CryptoKey;
+    private noteEncryption: NoteEncryptionManager;
+    private auditLogger: AuditLogger;
+    private privacyController: PrivacyController;
     
-    async initializeDatabase(userPassword: string): Promise<void> {
-        const dbKey = await this.keyManager.deriveKey(userPassword);
-        this.cipher = new SQLCipher(dbKey);
+    async initializeSecurity(userPassword: string): Promise<void> {
+        // Derive master key from user password
+        this.masterKey = await this.deriveKey(userPassword);
         
-        // Enable encryption
-        await this.cipher.pragma('cipher_page_size = 4096');
-        await this.cipher.pragma('kdf_iter = 256000');
+        // Initialize database encryption (SQLCipher)
+        await this.initializeDatabaseEncryption();
+        
+        // Setup note-level encryption for sensitive content
+        this.noteEncryption = new NoteEncryptionManager(this.masterKey);
+        
+        // Initialize audit logging
+        this.auditLogger = new AuditLogger(this.masterKey);
+        
+        // Setup privacy controls
+        this.privacyController = new PrivacyController();
     }
     
-    async encryptSensitiveData(data: any): Promise<string> {
-        const key = await this.keyManager.getEncryptionKey();
-        return AES.encrypt(JSON.stringify(data), key).toString();
+    private async deriveKey(password: string): Promise<CryptoKey> {
+        const encoder = new TextEncoder();
+        const keyMaterial = await crypto.subtle.importKey(
+            'raw',
+            encoder.encode(password),
+            'PBKDF2',
+            false,
+            ['deriveBits', 'deriveKey']
+        );
+        
+        return crypto.subtle.deriveKey(
+            {
+                name: 'PBKDF2',
+                salt: await this.getSalt(),
+                iterations: 100000,
+                hash: 'SHA-256'
+            },
+            keyMaterial,
+            { name: 'AES-GCM', length: 256 },
+            true,
+            ['encrypt', 'decrypt']
+        );
     }
 }
+
+class NoteEncryptionManager {
+    private encryptionKey: CryptoKey;
+    
+    async encryptSensitiveNote(noteContent: string, noteId: number): Promise<string> {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(noteContent);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        
+        const encrypted = await crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv },
+            this.encryptionKey,
+            data
+        );
+        
+        // Store IV with encrypted data
+        const result = new Uint8Array(iv.length + encrypted.byteLength);
+        result.set(iv);
+        result.set(new Uint8Array(encrypted), iv.length);
+        
+        // Log encryption event
+        await this.auditLogger.logEncryption(noteId, 'note_encrypted');
+        
+        return btoa(String.fromCharCode(...result));
+    }
+    
+    async decryptSensitiveNote(encryptedData: string, noteId: number): Promise<string> {
+        const data = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
+        const iv = data.slice(0, 12);
+        const encrypted = data.slice(12);
+        
+        const decrypted = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv },
+            this.encryptionKey,
+            encrypted
+        );
+        
+        // Log decryption event
+        await this.auditLogger.logDecryption(noteId, 'note_accessed');
+        
+        return new TextDecoder().decode(decrypted);
+    }
+}
+
+class PrivacyController {
+    private privacyLevels = {
+        PUBLIC: 0,      // No encryption, searchable
+        PRIVATE: 1,     // Encrypted, searchable metadata only
+        CONFIDENTIAL: 2, // Fully encrypted, no search
+        SECRET: 3       // Encrypted + additional access controls
+    };
+    
+    async setNotePrivacyLevel(noteId: number, level: number): Promise<void> {
+        await this.database.updateNote(noteId, {
+            privacy_level: level,
+            updated_at: new Date()
+        });
+        
+        // Re-encrypt if needed
+        if (level > this.privacyLevels.PUBLIC) {
+            await this.noteEncryption.encryptNote(noteId);
+        }
+        
+        // Update search index based on privacy level
+        await this.updateSearchIndex(noteId, level);
+    }
+    
+    private async updateSearchIndex(noteId: number, privacyLevel: number): Promise<void> {
+        if (privacyLevel >= this.privacyLevels.CONFIDENTIAL) {
+            // Remove from search index completely
+            await this.searchIndex.removeNote(noteId);
+        } else if (privacyLevel === this.privacyLevels.PRIVATE) {
+            // Index only metadata (title, tags, not content)
+            await this.searchIndex.indexMetadataOnly(noteId);
+        }
+    }
+}
+
+class AuditLogger {
+    async logSecurityEvent(event: SecurityEvent): Promise<void> {
+        const encryptedEvent = await this.encryptAuditEvent(event);
+        
+        await this.database.run(`
+            INSERT INTO security_audit_log (
+                timestamp, event_type, user_id, resource_type, 
+                resource_id, action, encrypted_details, hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            event.timestamp,
+            event.type,
+            event.userId,
+            event.resourceType,
+            event.resourceId,
+            event.action,
+            encryptedEvent,
+            await this.calculateEventHash(event)
+        ]);
+    }
+    
+    async generateSecurityReport(): Promise<SecurityReport> {
+        // Generate tamper-proof security report
+        const events = await this.getAuditEvents();
+        const report = {
+            generatedAt: new Date(),
+            totalEvents: events.length,
+            eventsByType: this.groupEventsByType(events),
+            suspiciousActivity: await this.detectSuspiciousActivity(events),
+            integrityCheck: await this.verifyAuditIntegrity()
+        };
+        
+        return report;
+    }
+}
+```
+
+**Database Security Schema:**
+```sql
+-- Add privacy and security columns to notes
+ALTER TABLE notes ADD COLUMN privacy_level INTEGER DEFAULT 0;
+ALTER TABLE notes ADD COLUMN is_encrypted BOOLEAN DEFAULT FALSE;
+ALTER TABLE notes ADD COLUMN encryption_iv TEXT;
+ALTER TABLE notes ADD COLUMN access_count INTEGER DEFAULT 0;
+ALTER TABLE notes ADD COLUMN last_accessed DATETIME;
+
+-- Security audit log
+CREATE TABLE security_audit_log (
+    id INTEGER PRIMARY KEY,
+    timestamp DATETIME NOT NULL,
+    event_type TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    encrypted_details TEXT,
+    hash TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT
+);
+
+-- Privacy settings
+CREATE TABLE privacy_settings (
+    id INTEGER PRIMARY KEY,
+    setting_name TEXT UNIQUE NOT NULL,
+    setting_value TEXT NOT NULL,
+    is_encrypted BOOLEAN DEFAULT FALSE,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Secure key storage
+CREATE TABLE encrypted_keys (
+    id INTEGER PRIMARY KEY,
+    key_name TEXT UNIQUE NOT NULL,
+    encrypted_key TEXT NOT NULL,
+    key_iv TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
 ```
 
 **Input Sanitization & Validation:**
@@ -1212,6 +1632,332 @@ class AccessibilityManager {
         document.body.appendChild(statusRegion);
     }
 }
+```
+
+## Performance at Scale Architecture
+
+### Large Dataset Optimization
+
+```typescript
+class ScalableDataManager {
+    private cache: LRUCache<string, any>;
+    private indexManager: IndexManager;
+    private memoryMonitor: MemoryMonitor;
+    private performanceProfiler: PerformanceProfiler;
+    
+    constructor() {
+        this.cache = new LRUCache({ max: 1000, ttl: 1000 * 60 * 10 }); // 10 min TTL
+        this.indexManager = new IndexManager();
+        this.memoryMonitor = new MemoryMonitor();
+        this.performanceProfiler = new PerformanceProfiler();
+        
+        // Monitor memory usage and adjust cache size
+        this.memoryMonitor.on('high-memory', () => this.reduceCacheSize());
+        this.memoryMonitor.on('low-memory', () => this.increaseCacheSize());
+    }
+    
+    async loadNotesPage(offset: number, limit: number): Promise<Note[]> {
+        const cacheKey = `notes:${offset}:${limit}`;
+        
+        // Check cache first
+        if (this.cache.has(cacheKey)) {
+            return this.cache.get(cacheKey);
+        }
+        
+        // Load from database with optimized query
+        const notes = await this.database.query(`
+            SELECT id, title, content_preview, category, tags, 
+                   updated_at, word_count, is_pinned, is_favorite
+            FROM notes 
+            WHERE is_archived = FALSE
+            ORDER BY 
+                CASE WHEN is_pinned = 1 THEN 0 ELSE 1 END,
+                updated_at DESC
+            LIMIT ? OFFSET ?
+        `, [limit, offset]);
+        
+        // Cache the result
+        this.cache.set(cacheKey, notes);
+        
+        return notes;
+    }
+    
+    async searchNotesOptimized(query: string, filters: SearchFilters): Promise<SearchResult[]> {
+        // Use FTS5 for full-text search with ranking
+        const searchQuery = this.buildOptimizedSearchQuery(query, filters);
+        
+        const results = await this.database.query(`
+            SELECT notes.id, notes.title, notes.category, notes.updated_at,
+                   snippet(notes_fts, 1, '<mark>', '</mark>', '...', 32) as snippet,
+                   rank
+            FROM notes_fts 
+            JOIN notes ON notes.id = notes_fts.rowid
+            WHERE notes_fts MATCH ?
+            AND ${this.buildFilterConditions(filters)}
+            ORDER BY rank
+            LIMIT 100
+        `, [searchQuery]);
+        
+        return results;
+    }
+}
+
+class MemoryMonitor {
+    private checkInterval: NodeJS.Timeout;
+    private thresholds = {
+        high: 1024 * 1024 * 1024, // 1GB
+        critical: 2048 * 1024 * 1024 // 2GB
+    };
+    
+    constructor() {
+        this.startMonitoring();
+    }
+    
+    private startMonitoring(): void {
+        this.checkInterval = setInterval(() => {
+            const usage = process.memoryUsage();
+            
+            if (usage.heapUsed > this.thresholds.critical) {
+                this.emit('critical-memory', usage);
+                this.forceGarbageCollection();
+            } else if (usage.heapUsed > this.thresholds.high) {
+                this.emit('high-memory', usage);
+            }
+        }, 30000); // Check every 30 seconds
+    }
+    
+    private forceGarbageCollection(): void {
+        if (global.gc) {
+            global.gc();
+        }
+    }
+}
+```
+
+## URL Handling System
+
+```typescript
+class URLManager {
+    private urlCache = new Map<string, URLMetadata>();
+    private previewGenerator: URLPreviewGenerator;
+    private securityValidator: URLSecurityValidator;
+    
+    constructor() {
+        this.previewGenerator = new URLPreviewGenerator();
+        this.securityValidator = new URLSecurityValidator();
+    }
+    
+    async processURL(url: string, noteId: number): Promise<URLMetadata> {
+        // Validate URL security first
+        const securityCheck = await this.securityValidator.validate(url);
+        if (!securityCheck.safe) {
+            throw new URLSecurityError(securityCheck.reason);
+        }
+        
+        // Check cache
+        if (this.urlCache.has(url)) {
+            return this.urlCache.get(url);
+        }
+        
+        // Generate preview metadata
+        const metadata = await this.previewGenerator.generate(url);
+        
+        // Store in database and cache
+        await this.storeURLMetadata(url, metadata, noteId);
+        this.urlCache.set(url, metadata);
+        
+        return metadata;
+    }
+    
+    private async storeURLMetadata(url: string, metadata: URLMetadata, noteId: number): Promise<void> {
+        await this.database.run(`
+            INSERT OR REPLACE INTO url_metadata (
+                url, title, description, image_url, site_name, 
+                note_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            url,
+            metadata.title,
+            metadata.description,
+            metadata.imageUrl,
+            metadata.siteName,
+            noteId,
+            new Date(),
+            new Date()
+        ]);
+    }
+}
+
+class URLPreviewGenerator {
+    private timeout = 5000; // 5 second timeout
+    
+    async generate(url: string): Promise<URLMetadata> {
+        try {
+            const response = await fetch(url, {
+                timeout: this.timeout,
+                headers: {
+                    'User-Agent': 'NoteSage/1.0 (URL Preview Bot)'
+                }
+            });
+            
+            const html = await response.text();
+            const metadata = this.parseHTMLMetadata(html);
+            
+            return {
+                url,
+                title: metadata.title || this.extractTitleFromURL(url),
+                description: metadata.description || '',
+                imageUrl: metadata.image || null,
+                siteName: metadata.siteName || this.extractDomainFromURL(url),
+                favicon: metadata.favicon || null,
+                createdAt: new Date()
+            };
+        } catch (error) {
+            // Fallback to basic URL info
+            return {
+                url,
+                title: this.extractTitleFromURL(url),
+                description: '',
+                imageUrl: null,
+                siteName: this.extractDomainFromURL(url),
+                favicon: null,
+                createdAt: new Date(),
+                error: error.message
+            };
+        }
+    }
+    
+    private parseHTMLMetadata(html: string): any {
+        // Parse Open Graph, Twitter Cards, and standard meta tags
+        const metadata = {};
+        
+        // Extract title
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        if (titleMatch) metadata.title = titleMatch[1].trim();
+        
+        // Extract meta tags
+        const metaRegex = /<meta[^>]+>/gi;
+        const metaTags = html.match(metaRegex) || [];
+        
+        metaTags.forEach(tag => {
+            const propertyMatch = tag.match(/property=["']([^"']+)["'][^>]*content=["']([^"']+)["']/i);
+            const nameMatch = tag.match(/name=["']([^"']+)["'][^>]*content=["']([^"']+)["']/i);
+            
+            if (propertyMatch) {
+                const [, property, content] = propertyMatch;
+                if (property === 'og:title') metadata.title = content;
+                if (property === 'og:description') metadata.description = content;
+                if (property === 'og:image') metadata.image = content;
+                if (property === 'og:site_name') metadata.siteName = content;
+            }
+            
+            if (nameMatch) {
+                const [, name, content] = nameMatch;
+                if (name === 'description') metadata.description = content;
+                if (name === 'twitter:title') metadata.title = metadata.title || content;
+                if (name === 'twitter:description') metadata.description = metadata.description || content;
+                if (name === 'twitter:image') metadata.image = metadata.image || content;
+            }
+        });
+        
+        return metadata;
+    }
+}
+
+class URLSecurityValidator {
+    private blockedDomains = new Set([
+        'malware-site.com',
+        'phishing-site.com'
+        // Add more as needed
+    ]);
+    
+    private suspiciousPatterns = [
+        /bit\.ly\/[a-zA-Z0-9]+/,
+        /tinyurl\.com\/[a-zA-Z0-9]+/,
+        // Add more suspicious URL patterns
+    ];
+    
+    async validate(url: string): Promise<SecurityValidation> {
+        try {
+            const urlObj = new URL(url);
+            
+            // Check blocked domains
+            if (this.blockedDomains.has(urlObj.hostname)) {
+                return {
+                    safe: false,
+                    reason: 'Domain is blocked for security reasons'
+                };
+            }
+            
+            // Check suspicious patterns
+            for (const pattern of this.suspiciousPatterns) {
+                if (pattern.test(url)) {
+                    return {
+                        safe: false,
+                        reason: 'URL matches suspicious pattern'
+                    };
+                }
+            }
+            
+            // Check protocol
+            if (!['http:', 'https:'].includes(urlObj.protocol)) {
+                return {
+                    safe: false,
+                    reason: 'Only HTTP and HTTPS URLs are allowed'
+                };
+            }
+            
+            return { safe: true };
+        } catch (error) {
+            return {
+                safe: false,
+                reason: 'Invalid URL format'
+            };
+        }
+    }
+}
+```
+
+**Performance & URL Database Schema:**
+```sql
+-- URL metadata storage
+CREATE TABLE url_metadata (
+    id INTEGER PRIMARY KEY,
+    url TEXT UNIQUE NOT NULL,
+    title TEXT,
+    description TEXT,
+    image_url TEXT,
+    site_name TEXT,
+    favicon TEXT,
+    note_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE SET NULL
+);
+
+-- URL security log
+CREATE TABLE url_security_log (
+    id INTEGER PRIMARY KEY,
+    url TEXT NOT NULL,
+    validation_result TEXT NOT NULL, -- 'safe', 'blocked', 'suspicious'
+    reason TEXT,
+    checked_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Performance monitoring
+CREATE TABLE performance_metrics (
+    id INTEGER PRIMARY KEY,
+    metric_name TEXT NOT NULL,
+    metric_value REAL NOT NULL,
+    context TEXT, -- JSON with additional context
+    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Performance indexes
+CREATE INDEX idx_url_metadata_note_id ON url_metadata(note_id);
+CREATE INDEX idx_url_metadata_url ON url_metadata(url);
+CREATE INDEX idx_performance_metrics_name ON performance_metrics(metric_name);
+CREATE INDEX idx_performance_metrics_recorded ON performance_metrics(recorded_at);
 ```
 
 ## Testing Strategy

@@ -77,7 +77,7 @@ The implementation is divided into two main tracks that can be developed in para
 
 ### Phase 3: Advanced Server Features
 
-- [ ] 8. Implement AI integration service
+- [x] 8. Implement AI integration service
   - Create AI service abstraction for multiple providers (OpenAI, Gemini, Grok)
   - Build secure API key storage and configuration system
   - Implement todo extraction from note content using AI
@@ -87,7 +87,7 @@ The implementation is divided into two main tracks that can be developed in para
   - Write tests for AI integration with mock providers
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 3.12_
 
-- [ ] 9. Add real-time collaboration with WebSocket support
+- [x] 9. Add real-time collaboration with WebSocket support
   - Implement Gorilla WebSocket server for real-time updates
   - Create room-based collaboration for shared notes
   - Build conflict resolution for simultaneous edits
@@ -96,7 +96,7 @@ The implementation is divided into two main tracks that can be developed in para
   - Write tests for WebSocket connections and message handling
   - _Requirements: 10.3, 10.8_
 
-- [ ] 10. Build search engine with advanced capabilities
+- [x] 10. Build search engine with advanced capabilities
   - Implement full-text search across all note content
   - Create advanced search with filters (category, tags, date ranges)
   - Build quick switcher with fuzzy search for note navigation

@@ -12,6 +12,7 @@ type Config struct {
 	Auth     AuthConfig
 	Logging  LoggingConfig
 	Features FeaturesConfig
+	AI       AIConfig
 }
 
 type ServerConfig struct {
@@ -55,6 +56,15 @@ type FeaturesConfig struct {
 	MaxUploadSize    string
 }
 
+type AIConfig struct {
+	Provider   string
+	APIKey     string
+	BaseURL    string
+	Model      string
+	MaxTokens  int
+	Timeout    int // seconds
+}
+
 func Load() (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{
@@ -90,6 +100,14 @@ func Load() (*Config, error) {
 			WebSocketEnabled: getEnvAsBool("WEBSOCKET_ENABLED", true),
 			FileUploads:      getEnvAsBool("FILE_UPLOADS", true),
 			MaxUploadSize:    getEnv("MAX_UPLOAD_SIZE", "10MB"),
+		},
+		AI: AIConfig{
+			Provider:  getEnv("AI_PROVIDER", "openai"),
+			APIKey:    getEnv("AI_API_KEY", ""),
+			BaseURL:   getEnv("AI_BASE_URL", ""),
+			Model:     getEnv("AI_MODEL", ""),
+			MaxTokens: getEnvAsInt("AI_MAX_TOKENS", 1000),
+			Timeout:   getEnvAsInt("AI_TIMEOUT", 30),
 		},
 	}
 

@@ -4,6 +4,7 @@ import (
 	"notesage-server/internal/config"
 	"notesage-server/internal/handlers"
 	"notesage-server/internal/middleware"
+	"notesage-server/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -21,12 +22,36 @@ func Setup(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	// Initialize services
+	wsService := services.NewWebSocketService(db)
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	noteHandler := handlers.NewNoteHandler(db)
 	personHandler := handlers.NewPersonHandler(db)
 	todoHandler := handlers.NewTodoHandler(db)
 	graphHandler := handlers.NewGraphHandler(db)
+	searchHandler := handlers.NewSearchHandler(db)
+	wsHandler := handlers.NewWebSocketHandler(wsService)
+	
+	// Initialize AI service and handler
+	var aiHandler *handlers.AIHandler
+	if cfg.Features.AIEnabled && cfg.AI.APIKey != "" {
+		aiConfig := &services.AIConfig{
+			Provider:  services.AIProvider(cfg.AI.Provider),
+			APIKey:    cfg.AI.APIKey,
+			BaseURL:   cfg.AI.BaseURL,
+			Model:     cfg.AI.Model,
+			MaxTokens: cfg.AI.MaxTokens,
+			Timeout:   cfg.AI.Timeout,
+		}
+		aiService := services.NewAIService(db, aiConfig)
+		aiHandler = handlers.NewAIHandler(aiService)
+	} else {
+		// Create disabled AI service
+		aiService := services.NewAIService(db, nil)
+		aiHandler = handlers.NewAIHandler(aiService)
+	}
 
 	// Public routes
 	auth := r.Group("/api/auth")
@@ -112,7 +137,38 @@ func Setup(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			graph.POST("/notes/:note_id/detect", graphHandler.DetectConnections)
 			graph.POST("/notes/:note_id/update", graphHandler.UpdateConnections)
 		}
+
+		// AI Features
+		ai := api.Group("/ai")
+		{
+			ai.GET("/status", aiHandler.GetAIStatus)
+			ai.POST("/extract-todos", aiHandler.ExtractTodos)
+			ai.POST("/analyze-people", aiHandler.AnalyzePeople)
+			ai.GET("/insights", aiHandler.GenerateInsights)
+			ai.POST("/notes/:noteId/extract-todos", aiHandler.ExtractTodosFromNote)
+			ai.POST("/notes/:noteId/analyze-people", aiHandler.AnalyzePeopleInNote)
+		}
+
+		// Search Engine
+		search := api.Group("/search")
+		{
+			search.GET("", searchHandler.AdvancedSearch)
+			search.GET("/quick", searchHandler.QuickSwitcher)
+			search.GET("/recent", searchHandler.GetRecentNotes)
+			search.GET("/suggestions", searchHandler.SearchSuggestions)
+			search.GET("/stats", searchHandler.GetSearchStats)
+		}
+
+		// WebSocket and Real-time Collaboration
+		ws := api.Group("/ws")
+		{
+			ws.GET("/stats", wsHandler.GetRoomStats)
+			ws.GET("/rooms", wsHandler.GetActiveRooms)
+		}
 	}
+
+	// WebSocket endpoint (needs to be outside the API group to avoid middleware conflicts)
+	r.GET("/ws", middleware.AuthMiddleware(cfg.Auth.JWTSecret), wsHandler.HandleWebSocket)
 
 	return r
 }

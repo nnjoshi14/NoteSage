@@ -32,18 +32,31 @@ func Logger() gin.HandlerFunc {
 
 func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
-			c.Abort()
-			return
-		}
+		var tokenString string
 
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == authHeader {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Bearer token required"})
-			c.Abort()
-			return
+		// For WebSocket connections, check query parameter first
+		if c.Request.Header.Get("Upgrade") == "websocket" {
+			tokenString = c.Query("token")
+			if tokenString == "" {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token query parameter required for WebSocket"})
+				c.Abort()
+				return
+			}
+		} else {
+			// For regular HTTP requests, use Authorization header
+			authHeader := c.GetHeader("Authorization")
+			if authHeader == "" {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+				c.Abort()
+				return
+			}
+
+			tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			if tokenString == authHeader {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Bearer token required"})
+				c.Abort()
+				return
+			}
 		}
 
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {

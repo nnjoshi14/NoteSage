@@ -1,8 +1,10 @@
 .layout {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   width: 100vw;
-  overflow: hidden;
+  background-color: var(--background-color, #ffffff);
+  color: var(--text-color, #333333);
 }
 
 .layout-content {
@@ -10,4 +12,12 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  .layout {
+    --background-color: #1e1e1e;
+    --text-color: #ffffff;
+  }
 }

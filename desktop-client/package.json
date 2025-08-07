@@ -34,12 +34,13 @@
   "author": "NoteSage Team",
   "license": "MIT",
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/jest": "^29.5.8",
     "@types/node": "^20.9.0",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
-    "@typescript-eslint/eslint-plugin": "^6.11.0",
-    "@typescript-eslint/parser": "^6.11.0",
+    "@typescript-eslint/eslint-plugin": "^8.39.0",
+    "@typescript-eslint/parser": "^8.39.0",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "css-loader": "^6.8.1",
@@ -86,7 +87,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
@@ -95,7 +99,9 @@
       "target": [
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

@@ -18,19 +18,80 @@ const App: React.FC = () => {
     dispatch(checkConnectionStatus());
 
     // Setup menu event listeners
-    window.electronAPI.onMenuNewNote(() => {
-      // Handle new note creation
+    const handleMenuNewNote = () => {
       console.log('New note requested from menu');
-    });
+      // TODO: Dispatch action to create new note
+    };
 
-    window.electronAPI.onMenuSave(() => {
-      // Handle save action
+    const handleMenuNewPerson = () => {
+      console.log('New person requested from menu');
+      // TODO: Dispatch action to create new person
+    };
+
+    const handleMenuSave = () => {
       console.log('Save requested from menu');
-    });
+      // TODO: Dispatch action to save current item
+    };
+
+    const handleMenuPreferences = () => {
+      console.log('Preferences requested from menu');
+      // TODO: Navigate to settings page
+    };
+
+    const handleMenuViewNotes = () => {
+      console.log('View notes requested from menu');
+      // TODO: Navigate to notes page
+    };
+
+    const handleMenuViewPeople = () => {
+      console.log('View people requested from menu');
+      // TODO: Navigate to people page
+    };
+
+    const handleMenuViewTodos = () => {
+      console.log('View todos requested from menu');
+      // TODO: Navigate to todos page
+    };
+
+    const handleMenuSyncComplete = () => {
+      console.log('Sync completed');
+      // TODO: Show success notification
+    };
+
+    const handleMenuSyncError = (event: any, error: string) => {
+      console.error('Sync error:', error);
+      // TODO: Show error notification
+    };
+
+    const handleMainProcessError = (event: any, error: any) => {
+      console.error('Main process error:', error);
+      // TODO: Show error dialog or notification
+    };
+
+    // Register event listeners
+    window.electronAPI.onMenuEvent('menu-new-note', handleMenuNewNote);
+    window.electronAPI.onMenuEvent('menu-new-person', handleMenuNewPerson);
+    window.electronAPI.onMenuEvent('menu-save', handleMenuSave);
+    window.electronAPI.onMenuEvent('menu-preferences', handleMenuPreferences);
+    window.electronAPI.onMenuEvent('menu-view-notes', handleMenuViewNotes);
+    window.electronAPI.onMenuEvent('menu-view-people', handleMenuViewPeople);
+    window.electronAPI.onMenuEvent('menu-view-todos', handleMenuViewTodos);
+    window.electronAPI.onMenuEvent('menu-sync-complete', handleMenuSyncComplete);
+    window.electronAPI.onMenuEvent('menu-sync-error', handleMenuSyncError);
+    window.electronAPI.onMenuEvent('main-process-error', handleMainProcessError);
 
     return () => {
+      // Cleanup event listeners
       window.electronAPI.removeAllListeners('menu-new-note');
+      window.electronAPI.removeAllListeners('menu-new-person');
       window.electronAPI.removeAllListeners('menu-save');
+      window.electronAPI.removeAllListeners('menu-preferences');
+      window.electronAPI.removeAllListeners('menu-view-notes');
+      window.electronAPI.removeAllListeners('menu-view-people');
+      window.electronAPI.removeAllListeners('menu-view-todos');
+      window.electronAPI.removeAllListeners('menu-sync-complete');
+      window.electronAPI.removeAllListeners('menu-sync-error');
+      window.electronAPI.removeAllListeners('main-process-error');
     };
   }, [dispatch]);
 

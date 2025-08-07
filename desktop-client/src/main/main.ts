@@ -1,21 +1,65 @@
-import { app, BrowserWindow, Menu, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, shell, dialog, nativeTheme } from 'electron';
 import * as path from 'path';
 import { ServerConnectionManager } from './server-connection';
 import { OfflineCache } from './offline-cache';
 import { SyncManager } from './sync-manager';
+
+// Security: Disable node integration and enable context isolation by default
+app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
+
+interface WindowState {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+  isMaximized: boolean;
+}
 
 class NoteSageApp {
   private mainWindow: BrowserWindow | null = null;
   private serverConnection: ServerConnectionManager;
   private offlineCache: OfflineCache;
   private syncManager: SyncManager;
+  private windowState: WindowState = {
+    width: 1200,
+    height: 800,
+    isMaximized: false
+  };
 
   constructor() {
     this.serverConnection = new ServerConnectionManager();
     this.offlineCache = new OfflineCache();
     this.syncManager = new SyncManager(this.serverConnection, this.offlineCache);
     
+    this.setupSecurityPolicies();
     this.setupEventHandlers();
+  }
+
+  private setupSecurityPolicies(): void {
+    // Security: Prevent new window creation
+    app.on('web-contents-created', (event, contents) => {
+      contents.setWindowOpenHandler(({ url }) => {
+        shell.openExternal(url);
+        return { action: 'deny' };
+      });
+
+      // Security: Prevent navigation to external URLs
+      contents.on('will-navigate', (event, navigationUrl) => {
+        const parsedUrl = new URL(navigationUrl);
+        
+        if (parsedUrl.origin !== 'http://localhost:3000' && parsedUrl.origin !== 'file://') {
+          event.preventDefault();
+        }
+      });
+    });
+
+    // Security: Prevent permission requests
+    app.on('web-contents-created', (event, contents) => {
+      contents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+        const allowedPermissions = ['clipboard-read', 'clipboard-write'];
+        callback(allowedPermissions.includes(permission));
+      });
+    });
   }
 
   private setupEventHandlers(): void {
@@ -39,17 +83,41 @@ class NoteSageApp {
   }
 
   private createWindow(): void {
+    // Restore window state
+    this.loadWindowState();
+
     this.mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
+      width: this.windowState.width,
+      height: this.windowState.height,
+      x: this.windowState.x,
+      y: this.windowState.y,
+      minWidth: 800,
+      minHeight: 600,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+
+        allowRunningInsecureContent: false,
+        experimentalFeatures: false,
         preload: path.join(__dirname, 'preload.js'),
+        // Security: Disable node integration in worker threads
+        nodeIntegrationInWorker: false,
+        // Security: Disable node integration in subframes
+        nodeIntegrationInSubFrames: false,
+        // Security: Enable sandbox mode
+        sandbox: false, // Disabled for now due to IPC requirements
+        // Security: Disable web security in development only
+        webSecurity: process.env.NODE_ENV !== 'development',
       },
-      titleBarStyle: 'hiddenInset',
+      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
       show: false,
+      icon: process.platform === 'linux' ? path.join(__dirname, '../assets/icon.png') : undefined,
     });
+
+    // Restore maximized state
+    if (this.windowState.isMaximized) {
+      this.mainWindow.maximize();
+    }
 
     const isDev = process.env.NODE_ENV === 'development';
     
@@ -62,15 +130,93 @@ class NoteSageApp {
 
     this.mainWindow.once('ready-to-show', () => {
       this.mainWindow?.show();
+      
+      // Focus the window on creation
+      if (this.mainWindow) {
+        this.mainWindow.focus();
+      }
     });
+
+    // Save window state on resize and move
+    this.mainWindow.on('resize', () => this.saveWindowState());
+    this.mainWindow.on('move', () => this.saveWindowState());
+    this.mainWindow.on('maximize', () => this.saveWindowState());
+    this.mainWindow.on('unmaximize', () => this.saveWindowState());
 
     this.mainWindow.on('closed', () => {
       this.mainWindow = null;
     });
+
+    // Handle external links
+    this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    });
+  }
+
+  private loadWindowState(): void {
+    try {
+      // In a real implementation, this would load from a config file or electron-store
+      // For now, using defaults
+      this.windowState = {
+        width: 1200,
+        height: 800,
+        isMaximized: false
+      };
+    } catch (error) {
+      console.error('Failed to load window state:', error);
+    }
+  }
+
+  private saveWindowState(): void {
+    if (!this.mainWindow) return;
+
+    try {
+      const bounds = this.mainWindow.getBounds();
+      this.windowState = {
+        width: bounds.width,
+        height: bounds.height,
+        x: bounds.x,
+        y: bounds.y,
+        isMaximized: this.mainWindow.isMaximized()
+      };
+      
+      // In a real implementation, this would save to a config file or electron-store
+      console.log('Window state saved:', this.windowState);
+    } catch (error) {
+      console.error('Failed to save window state:', error);
+    }
   }
 
   private setupMenu(): void {
+    const isMac = process.platform === 'darwin';
+    
     const template: Electron.MenuItemConstructorOptions[] = [
+      // macOS app menu
+      ...(isMac ? [{
+        label: app.getName(),
+        submenu: [
+          { role: 'about' as const },
+          { type: 'separator' as const },
+          {
+            label: 'Preferences...',
+            accelerator: 'Cmd+,',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-preferences');
+            },
+          },
+          { type: 'separator' as const },
+          { role: 'services' as const },
+          { type: 'separator' as const },
+          { role: 'hide' as const },
+          { role: 'hideOthers' as const },
+          { role: 'unhide' as const },
+          { type: 'separator' as const },
+          { role: 'quit' as const },
+        ],
+      }] : []),
+      
+      // File menu
       {
         label: 'File',
         submenu: [
@@ -82,22 +228,80 @@ class NoteSageApp {
             },
           },
           {
+            label: 'New Person',
+            accelerator: 'CmdOrCtrl+Shift+P',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-new-person');
+            },
+          },
+          { type: 'separator' },
+          {
+            label: 'Open...',
+            accelerator: 'CmdOrCtrl+O',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-open');
+            },
+          },
+          {
             label: 'Save',
             accelerator: 'CmdOrCtrl+S',
             click: () => {
               this.mainWindow?.webContents.send('menu-save');
             },
           },
-          { type: 'separator' },
           {
-            label: 'Quit',
-            accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+            label: 'Save As...',
+            accelerator: 'CmdOrCtrl+Shift+S',
             click: () => {
-              app.quit();
+              this.mainWindow?.webContents.send('menu-save-as');
             },
           },
+          { type: 'separator' },
+          {
+            label: 'Export...',
+            submenu: [
+              {
+                label: 'Export as PDF',
+                click: () => {
+                  this.mainWindow?.webContents.send('menu-export-pdf');
+                },
+              },
+              {
+                label: 'Export as Markdown',
+                click: () => {
+                  this.mainWindow?.webContents.send('menu-export-markdown');
+                },
+              },
+              {
+                label: 'Export as HTML',
+                click: () => {
+                  this.mainWindow?.webContents.send('menu-export-html');
+                },
+              },
+            ],
+          },
+          { type: 'separator' },
+          ...(!isMac ? [
+            {
+              label: 'Preferences...',
+              accelerator: 'Ctrl+,',
+              click: () => {
+                this.mainWindow?.webContents.send('menu-preferences');
+              },
+            },
+            { type: 'separator' as const },
+            {
+              label: 'Quit',
+              accelerator: 'Ctrl+Q',
+              click: () => {
+                app.quit();
+              },
+            },
+          ] : []),
         ],
       },
+      
+      // Edit menu
       {
         label: 'Edit',
         submenu: [
@@ -107,11 +311,66 @@ class NoteSageApp {
           { role: 'cut' },
           { role: 'copy' },
           { role: 'paste' },
+          { role: 'selectAll' },
+          { type: 'separator' },
+          {
+            label: 'Find',
+            accelerator: 'CmdOrCtrl+F',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-find');
+            },
+          },
+          {
+            label: 'Find and Replace',
+            accelerator: 'CmdOrCtrl+H',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-find-replace');
+            },
+          },
         ],
       },
+      
+      // View menu
       {
         label: 'View',
         submenu: [
+          {
+            label: 'Notes',
+            accelerator: 'CmdOrCtrl+1',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-view-notes');
+            },
+          },
+          {
+            label: 'People',
+            accelerator: 'CmdOrCtrl+2',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-view-people');
+            },
+          },
+          {
+            label: 'Todos',
+            accelerator: 'CmdOrCtrl+3',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-view-todos');
+            },
+          },
+          {
+            label: 'Knowledge Graph',
+            accelerator: 'CmdOrCtrl+4',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-view-graph');
+            },
+          },
+          { type: 'separator' },
+          {
+            label: 'Toggle Sidebar',
+            accelerator: 'CmdOrCtrl+B',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-toggle-sidebar');
+            },
+          },
+          { type: 'separator' },
           { role: 'reload' },
           { role: 'forceReload' },
           { role: 'toggleDevTools' },
@@ -123,17 +382,100 @@ class NoteSageApp {
           { role: 'togglefullscreen' },
         ],
       },
+      
+      // Tools menu
+      {
+        label: 'Tools',
+        submenu: [
+          {
+            label: 'Quick Switcher',
+            accelerator: 'CmdOrCtrl+P',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-quick-switcher');
+            },
+          },
+          {
+            label: 'Command Palette',
+            accelerator: 'CmdOrCtrl+Shift+P',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-command-palette');
+            },
+          },
+          { type: 'separator' },
+          {
+            label: 'Sync Now',
+            accelerator: 'CmdOrCtrl+R',
+            click: async () => {
+              try {
+                await this.syncManager.syncAll();
+                this.mainWindow?.webContents.send('menu-sync-complete');
+              } catch (error) {
+                this.mainWindow?.webContents.send('menu-sync-error', error instanceof Error ? error.message : 'Unknown error');
+              }
+            },
+          },
+          {
+            label: 'Connection Status',
+            click: () => {
+              this.mainWindow?.webContents.send('menu-connection-status');
+            },
+          },
+        ],
+      },
+      
+      // Window menu
       {
         label: 'Window',
         submenu: [
           { role: 'minimize' },
           { role: 'close' },
+          ...(isMac ? [
+            { type: 'separator' as const },
+            { role: 'front' as const },
+            { type: 'separator' as const },
+            { role: 'window' as const },
+          ] : []),
+        ],
+      },
+      
+      // Help menu
+      {
+        role: 'help',
+        submenu: [
+          {
+            label: 'About NoteSage',
+            click: () => {
+              this.showAboutDialog();
+            },
+          },
+          {
+            label: 'Learn More',
+            click: () => {
+              shell.openExternal('https://notesage.com');
+            },
+          },
+          {
+            label: 'Report Issue',
+            click: () => {
+              shell.openExternal('https://github.com/notesage/desktop/issues');
+            },
+          },
         ],
       },
     ];
 
     const menu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(menu);
+  }
+
+  private showAboutDialog(): void {
+    dialog.showMessageBox(this.mainWindow!, {
+      type: 'info',
+      title: 'About NoteSage',
+      message: 'NoteSage Desktop',
+      detail: `Version: ${app.getVersion()}\nElectron: ${process.versions.electron}\nNode: ${process.versions.node}`,
+      buttons: ['OK'],
+    });
   }
 
   private setupIPC(): void {
@@ -143,17 +485,105 @@ class NoteSageApp {
         await this.serverConnection.connect(serverConfig);
         return { success: true };
       } catch (error) {
-        return { success: false, error: error.message };
+        console.error('Server connection failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('connect-with-profile', async (event, profileId, password) => {
+      try {
+        await this.serverConnection.connectWithProfile(profileId, password);
+        return { success: true };
+      } catch (error) {
+        console.error('Profile connection failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('switch-profile', async (event, profileId, password) => {
+      try {
+        await this.serverConnection.switchProfile(profileId, password);
+        return { success: true };
+      } catch (error) {
+        console.error('Profile switch failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
       }
     });
 
     ipcMain.handle('disconnect-from-server', async () => {
-      await this.serverConnection.disconnect();
-      return { success: true };
+      try {
+        await this.serverConnection.disconnect();
+        return { success: true };
+      } catch (error) {
+        console.error('Server disconnection failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
     });
 
-    ipcMain.handle('get-connection-status', () => {
-      return this.serverConnection.getStatus();
+    ipcMain.handle('get-connection-status', async () => {
+      try {
+        return this.serverConnection.getStatus();
+      } catch (error) {
+        console.error('Failed to get connection status:', error);
+        return { connected: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('test-connection', async () => {
+      try {
+        return await this.serverConnection.testConnection();
+      } catch (error) {
+        console.error('Connection test failed:', error);
+        return false;
+      }
+    });
+
+    // Server profile management
+    ipcMain.handle('save-server-profile', async (event, profile) => {
+      try {
+        await this.serverConnection.saveProfile(profile);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to save profile:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('load-server-profiles', async () => {
+      try {
+        return await this.serverConnection.loadProfiles();
+      } catch (error) {
+        console.error('Failed to load profiles:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('delete-server-profile', async (event, profileId) => {
+      try {
+        await this.serverConnection.deleteProfile(profileId);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to delete profile:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('get-default-profile', async () => {
+      try {
+        return await this.serverConnection.getDefaultProfile();
+      } catch (error) {
+        console.error('Failed to get default profile:', error);
+        return null;
+      }
+    });
+
+    ipcMain.handle('get-current-profile', async () => {
+      try {
+        return this.serverConnection.getCurrentProfile();
+      } catch (error) {
+        console.error('Failed to get current profile:', error);
+        return null;
+      }
     });
 
     // Sync operations
@@ -162,18 +592,235 @@ class NoteSageApp {
         const result = await this.syncManager.syncAll();
         return { success: true, result };
       } catch (error) {
-        return { success: false, error: error.message };
+        console.error('Sync failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('get-sync-status', async () => {
+      try {
+        return this.syncManager.getSyncStatus();
+      } catch (error) {
+        console.error('Failed to get sync status:', error);
+        return { isRunning: false, conflicts: [] };
+      }
+    });
+
+    ipcMain.handle('resolve-conflict', async (event, conflictId, resolution) => {
+      try {
+        await this.syncManager.resolveConflict(conflictId, resolution);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to resolve conflict:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('set-sync-settings', async (event, settings) => {
+      try {
+        if (settings.autoSyncEnabled !== undefined) {
+          this.syncManager.setAutoSyncEnabled(settings.autoSyncEnabled);
+        }
+        if (settings.autoSyncInterval !== undefined) {
+          this.syncManager.setAutoSyncInterval(settings.autoSyncInterval);
+        }
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to set sync settings:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('get-sync-settings', async () => {
+      try {
+        // Return current sync settings - in a real implementation, these would be stored
+        return {
+          autoSyncEnabled: true,
+          autoSyncInterval: 5 * 60 * 1000, // 5 minutes
+        };
+      } catch (error) {
+        console.error('Failed to get sync settings:', error);
+        return { autoSyncEnabled: true, autoSyncInterval: 5 * 60 * 1000 };
       }
     });
 
     // Offline cache operations
     ipcMain.handle('get-cached-notes', async () => {
-      return await this.offlineCache.getNotes();
+      try {
+        return await this.offlineCache.getNotes();
+      } catch (error) {
+        console.error('Failed to get cached notes:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('get-cached-people', async () => {
+      try {
+        return await this.offlineCache.getPeople();
+      } catch (error) {
+        console.error('Failed to get cached people:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('get-cached-todos', async () => {
+      try {
+        return await this.offlineCache.getTodos();
+      } catch (error) {
+        console.error('Failed to get cached todos:', error);
+        return [];
+      }
     });
 
     ipcMain.handle('cache-note', async (event, note) => {
-      await this.offlineCache.saveNote(note);
-      return { success: true };
+      try {
+        await this.offlineCache.saveNote(note);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to cache note:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('cache-person', async (event, person) => {
+      try {
+        await this.offlineCache.savePerson(person);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to cache person:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('cache-todo', async (event, todo) => {
+      try {
+        await this.offlineCache.saveTodo(todo);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to cache todo:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('get-cache-stats', async () => {
+      try {
+        return await this.offlineCache.getCacheStats();
+      } catch (error) {
+        console.error('Failed to get cache stats:', error);
+        return {
+          totalSize: 0,
+          noteCount: 0,
+          peopleCount: 0,
+          todoCount: 0,
+          pendingChanges: 0,
+          lastCleanup: new Date().toISOString(),
+          cacheVersion: '1.0.0',
+        };
+      }
+    });
+
+    ipcMain.handle('clear-cache', async () => {
+      try {
+        await this.offlineCache.clearCache();
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to clear cache:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('cleanup-cache', async () => {
+      try {
+        await this.offlineCache.cleanupCache();
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to cleanup cache:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Window management
+    ipcMain.handle('window-minimize', () => {
+      this.mainWindow?.minimize();
+    });
+
+    ipcMain.handle('window-maximize', () => {
+      if (this.mainWindow?.isMaximized()) {
+        this.mainWindow.unmaximize();
+      } else {
+        this.mainWindow?.maximize();
+      }
+    });
+
+    ipcMain.handle('window-close', () => {
+      this.mainWindow?.close();
+    });
+
+    // Theme management
+    ipcMain.handle('get-theme', () => {
+      return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+    });
+
+    ipcMain.handle('set-theme', (event, theme: 'light' | 'dark' | 'system') => {
+      nativeTheme.themeSource = theme;
+    });
+
+    // File operations
+    ipcMain.handle('show-save-dialog', async (event, options) => {
+      if (!this.mainWindow) return { canceled: true };
+      
+      try {
+        return await dialog.showSaveDialog(this.mainWindow, options);
+      } catch (error) {
+        console.error('Save dialog failed:', error);
+        return { canceled: true };
+      }
+    });
+
+    ipcMain.handle('show-open-dialog', async (event, options) => {
+      if (!this.mainWindow) return { canceled: true };
+      
+      try {
+        return await dialog.showOpenDialog(this.mainWindow, options);
+      } catch (error) {
+        console.error('Open dialog failed:', error);
+        return { canceled: true };
+      }
+    });
+
+    // App info
+    ipcMain.handle('get-app-version', () => {
+      return app.getVersion();
+    });
+
+    ipcMain.handle('get-app-info', () => {
+      return {
+        version: app.getVersion(),
+        name: app.getName(),
+        platform: process.platform,
+        arch: process.arch,
+        electron: process.versions.electron,
+        node: process.versions.node,
+      };
+    });
+
+    // Error handling
+    process.on('uncaughtException', (error) => {
+      console.error('Uncaught Exception:', error);
+      this.mainWindow?.webContents.send('main-process-error', {
+        type: 'uncaughtException',
+        message: error.message,
+        stack: error.stack,
+      });
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+      this.mainWindow?.webContents.send('main-process-error', {
+        type: 'unhandledRejection',
+        message: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+      });
     });
   }
 }

@@ -168,6 +168,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppInfo: () => 
     ipcRenderer.invoke('get-app-info'),
 
+  // AI configuration
+  getAIConfig: () =>
+    ipcRenderer.invoke('get-ai-config'),
+  setAIConfig: (config: any) =>
+    ipcRenderer.invoke('set-ai-config', config),
+
+  // Version History APIs
+  getVersionHistory: (noteId: string) => 
+    ipcRenderer.invoke('version:getHistory', noteId),
+  getVersion: (noteId: string, version: number) => 
+    ipcRenderer.invoke('version:get', noteId, version),
+  restoreVersion: (noteId: string, version: number) => 
+    ipcRenderer.invoke('version:restore', noteId, version),
+  createVersion: (data: { noteId: string; content: string; changeDescription?: string }) => 
+    ipcRenderer.invoke('version:create', data),
+
+  // Collaboration APIs
+  getWebSocketUrl: () => 
+    ipcRenderer.invoke('collaboration:getWebSocketUrl'),
+  getConnectedUsers: (noteId: string) => 
+    ipcRenderer.invoke('collaboration:getConnectedUsers', noteId),
+  resolveConflict: (data: { conflictId: string; resolution: string; content?: string }) => 
+    ipcRenderer.invoke('collaboration:resolveConflict', data),
+
   // Menu events with validation
   onMenuEvent: (channel: string, callback: (...args: any[]) => void) => {
     if (validChannels.includes(channel)) {
@@ -262,6 +286,21 @@ declare global {
       // App info
       getAppVersion: () => Promise<string>;
       getAppInfo: () => Promise<AppInfo>;
+
+      // AI configuration
+      getAIConfig: () => Promise<any>;
+      setAIConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
+
+      // Version History APIs
+      getVersionHistory: (noteId: string) => Promise<{ versions: any[] }>;
+      getVersion: (noteId: string, version: number) => Promise<{ version: any }>;
+      restoreVersion: (noteId: string, version: number) => Promise<{ success: boolean }>;
+      createVersion: (data: { noteId: string; content: string; changeDescription?: string }) => Promise<{ version: any }>;
+
+      // Collaboration APIs
+      getWebSocketUrl: () => Promise<string>;
+      getConnectedUsers: (noteId: string) => Promise<{ users: any[] }>;
+      resolveConflict: (data: { conflictId: string; resolution: string; content?: string }) => Promise<{ success: boolean }>;
 
       // Event handling
       onMenuEvent: (channel: string, callback: (...args: any[]) => void) => void;

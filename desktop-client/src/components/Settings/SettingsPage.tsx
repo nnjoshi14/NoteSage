@@ -1,10 +1,17 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '@/stores/hooks';
 import { disconnectFromServer, syncData } from '@/stores/slices/connectionSlice';
+import { initializeAI } from '@/stores/slices/aiSlice';
+import AIConfiguration from '@/components/AI/AIConfiguration';
 
 const SettingsPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const { connected, serverUrl, lastSync } = useAppSelector(state => state.connection);
+
+  useEffect(() => {
+    // Initialize AI on settings page load
+    dispatch(initializeAI());
+  }, [dispatch]);
 
   const handleDisconnect = () => {
     dispatch(disconnectFromServer());
@@ -58,6 +65,15 @@ const SettingsPage: React.FC = () => {
               Disconnect
             </button>
           </div>
+        </div>
+      </div>
+
+      <div className="card mb-3">
+        <div className="card-header">
+          <h5 className="mb-0">AI Features</h5>
+        </div>
+        <div className="card-body">
+          <AIConfiguration />
         </div>
       </div>
 

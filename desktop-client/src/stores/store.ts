@@ -3,6 +3,8 @@ import connectionReducer from './slices/connectionSlice';
 import notesReducer from './slices/notesSlice';
 import peopleReducer from './slices/peopleSlice';
 import todosReducer from './slices/todosSlice';
+import aiReducer from './slices/aiSlice';
+import collaborationReducer from './slices/collaborationSlice';
 
 export const store = configureStore({
   reducer: {
@@ -10,6 +12,8 @@ export const store = configureStore({
     notes: notesReducer,
     people: peopleReducer,
     todos: todosReducer,
+    ai: aiReducer,
+    collaboration: collaborationReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

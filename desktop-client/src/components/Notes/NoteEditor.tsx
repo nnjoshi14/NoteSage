@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '../../stores/hooks';
 import { Note, saveNote, updateCurrentNote } from '../../stores/slices/notesSlice';
+import { createVersion, addConflict } from '../../stores/slices/collaborationSlice';
 import RichTextEditor from '../Editor/RichTextEditor';
+import VersionHistory from '../Collaboration/VersionHistory';
+import CollaborationIndicators from '../Collaboration/CollaborationIndicators';
+import ConflictResolution from '../Collaboration/ConflictResolution';
+import { collaborationService } from '../../services/collaborationService';
 import './NoteEditor.css';
 
 interface NoteEditorProps {
@@ -22,6 +27,13 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose }) => {
   const [isModified, setIsModified] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  
+  // Collaboration states
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showConflictResolution, setShowConflictResolution] = useState(false);
+  const [collaborationEnabled, setCollaborationEnabled] = useState(false);
+  
+  const { activeConflict } = useAppSelector(state => state.collaboration);
 
   // Available categories
   const categories = ['Note', 'Meeting', 'Research', 'Project', 'Personal', 'Archive'];
@@ -87,10 +99,45 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose }) => {
     }
   }, [isModified, autoSave]);
 
+  // Handle collaboration events
+  useEffect(() => {
+    const handleContentChange = (event: CustomEvent<{ content: string; authorId: string; timestamp: string }>) => {
+      if (note?.id && event.detail.content !== content) {
+        setContent(event.detail.content);
+        setIsModified(true);
+      }
+    };
+
+    const handleConflictDetected = (event: CustomEvent<any>) => {
+      dispatch(addConflict(event.detail));
+      setShowConflictResolution(true);
+    };
+
+    window.addEventListener('collaboration:content_change', handleContentChange as EventListener);
+    window.addEventListener('collaboration:conflict_detected', handleConflictDetected as EventListener);
+
+    return () => {
+      window.removeEventListener('collaboration:content_change', handleContentChange as EventListener);
+      window.removeEventListener('collaboration:conflict_detected', handleConflictDetected as EventListener);
+    };
+  }, [dispatch, note?.id, content]);
+
+  // Show conflict resolution when there's an active conflict
+  useEffect(() => {
+    if (activeConflict && !showConflictResolution) {
+      setShowConflictResolution(true);
+    }
+  }, [activeConflict, showConflictResolution]);
+
   // Handle content changes
   const handleContentChange = (newContent: string) => {
     setContent(newContent);
     setIsModified(true);
+    
+    // Send real-time updates if collaboration is enabled
+    if (collaborationEnabled && note?.id) {
+      collaborationService.sendContentChange(note.id, newContent);
+    }
   };
 
   const handleTitleChange = (newTitle: string) => {
@@ -128,6 +175,36 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose }) => {
 
   const handleSave = async () => {
     await autoSave();
+    
+    // Create a version after saving
+    if (note?.id) {
+      try {
+        await dispatch(createVersion({
+          noteId: note.id,
+          content,
+          changeDescription: 'Manual save'
+        }));
+      } catch (error) {
+        console.error('Failed to create version:', error);
+      }
+    }
+  };
+
+  const handleVersionRestore = (version: any) => {
+    setContent(version.content);
+    setTitle(version.title);
+    setIsModified(true);
+    setShowVersionHistory(false);
+  };
+
+  const handleConflictResolved = (resolvedContent: string) => {
+    setContent(resolvedContent);
+    setIsModified(true);
+    setShowConflictResolution(false);
+  };
+
+  const handleCollaborationToggle = (enabled: boolean) => {
+    setCollaborationEnabled(enabled);
   };
 
   const handleExport = async (format: 'pdf' | 'markdown' | 'html') => {
@@ -183,6 +260,22 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose }) => {
         </div>
 
         <div className="note-editor-actions">
+          {note?.id && (
+            <CollaborationIndicators
+              noteId={note.id}
+              isEnabled={collaborationEnabled}
+              onToggle={handleCollaborationToggle}
+            />
+          )}
+          
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowVersionHistory(true)}
+            disabled={!note?.id}
+          >
+            History
+          </button>
+          
           <button
             className="btn btn-secondary"
             onClick={handleSave}
@@ -272,11 +365,25 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose }) => {
 
       {/* Content Editor */}
       <div className="note-editor-content">
-        <RichTextEditor
-          content={content}
-          onChange={handleContentChange}
-          placeholder="Start writing your note..."
-        />
+        {showVersionHistory && note?.id ? (
+          <VersionHistory
+            noteId={note.id}
+            currentContent={content}
+            onVersionRestore={handleVersionRestore}
+            onClose={() => setShowVersionHistory(false)}
+          />
+        ) : showConflictResolution ? (
+          <ConflictResolution
+            onResolved={handleConflictResolved}
+            onCancel={() => setShowConflictResolution(false)}
+          />
+        ) : (
+          <RichTextEditor
+            content={content}
+            onChange={handleContentChange}
+            placeholder="Start writing your note..."
+          />
+        )}
       </div>
 
       {/* Footer with note info */}

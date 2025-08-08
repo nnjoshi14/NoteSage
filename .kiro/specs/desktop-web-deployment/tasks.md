@@ -183,7 +183,7 @@ The implementation is divided into two main tracks that can be developed in para
 
 ### Phase 6: Advanced Desktop Features
 
-- [ ] 18. Implement knowledge graph visualization
+- [x] 18. Implement knowledge graph visualization
   - Create D3.js-based interactive graph visualization
   - Build node and link rendering with proper styling
   - Implement graph interaction (drag, zoom, click, search)
@@ -193,7 +193,7 @@ The implementation is divided into two main tracks that can be developed in para
   - Write tests for graph rendering and interaction
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-- [ ] 19. Add AI features integration
+- [x] 19. Add AI features integration
   - Create AI configuration interface for provider setup
   - Implement secure API key storage and management
   - Build AI-powered todo extraction from notes
@@ -203,7 +203,7 @@ The implementation is divided into two main tracks that can be developed in para
   - Write tests for AI integration and error handling
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 20. Build version history and collaboration features
+- [x] 20. Build version history and collaboration features
   - Implement version history tracking and display
   - Create version comparison and diff visualization
   - Build version restoration functionality

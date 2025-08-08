@@ -920,6 +920,26 @@ class NoteSageApp {
       };
     });
 
+    // AI configuration
+    ipcMain.handle('get-ai-config', async () => {
+      try {
+        return await this.getAIConfig();
+      } catch (error) {
+        console.error('Failed to get AI config:', error);
+        return null;
+      }
+    });
+
+    ipcMain.handle('set-ai-config', async (event, config) => {
+      try {
+        await this.setAIConfig(config);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to set AI config:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
     // Error handling
     process.on('uncaughtException', (error) => {
       console.error('Uncaught Exception:', error);
@@ -938,6 +958,81 @@ class NoteSageApp {
         stack: reason instanceof Error ? reason.stack : undefined,
       });
     });
+  }
+
+  private async getAIConfig(): Promise<any> {
+    try {
+      const { safeStorage } = require('electron');
+      const fs = require('fs').promises;
+      const os = require('os');
+      const path = require('path');
+      
+      const configDir = path.join(os.homedir(), '.notesage');
+      const configPath = path.join(configDir, 'ai-config.json');
+      
+      // Check if config file exists
+      try {
+        await fs.access(configPath);
+      } catch {
+        return null; // Config doesn't exist
+      }
+      
+      const encryptedData = await fs.readFile(configPath, 'utf8');
+      const configData = JSON.parse(encryptedData);
+      
+      // Decrypt the API key if it exists and safeStorage is available
+      if (configData.apiKey && safeStorage.isEncryptionAvailable()) {
+        try {
+          const encryptedApiKey = Buffer.from(configData.apiKey, 'base64');
+          configData.apiKey = safeStorage.decryptString(encryptedApiKey);
+        } catch (error) {
+          console.warn('Failed to decrypt API key:', error);
+          configData.apiKey = '';
+        }
+      }
+      
+      return configData;
+    } catch (error) {
+      console.error('Failed to load AI config:', error);
+      return null;
+    }
+  }
+
+  private async setAIConfig(config: any): Promise<void> {
+    try {
+      const { safeStorage } = require('electron');
+      const fs = require('fs').promises;
+      const os = require('os');
+      const path = require('path');
+      
+      const configDir = path.join(os.homedir(), '.notesage');
+      const configPath = path.join(configDir, 'ai-config.json');
+      
+      // Ensure config directory exists
+      try {
+        await fs.mkdir(configDir, { recursive: true });
+      } catch (error) {
+        // Directory might already exist
+      }
+      
+      // Clone config to avoid modifying the original
+      const configToSave = { ...config };
+      
+      // Encrypt the API key if safeStorage is available
+      if (configToSave.apiKey && safeStorage.isEncryptionAvailable()) {
+        try {
+          const encryptedApiKey = safeStorage.encryptString(configToSave.apiKey);
+          configToSave.apiKey = encryptedApiKey.toString('base64');
+        } catch (error) {
+          console.warn('Failed to encrypt API key, storing in plain text:', error);
+        }
+      }
+      
+      await fs.writeFile(configPath, JSON.stringify(configToSave, null, 2), 'utf8');
+    } catch (error) {
+      console.error('Failed to save AI config:', error);
+      throw error;
+    }
   }
 }
 

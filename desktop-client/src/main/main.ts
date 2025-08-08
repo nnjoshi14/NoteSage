@@ -597,6 +597,21 @@ class NoteSageApp {
       }
     });
 
+    ipcMain.handle('trigger-sync', async () => {
+      try {
+        const result = await this.syncManager.syncAll();
+        return { 
+          success: true, 
+          synced: result.synced || 0,
+          failed: result.failed || 0,
+          conflicts: result.conflicts || 0
+        };
+      } catch (error) {
+        console.error('Manual sync failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
     ipcMain.handle('get-sync-status', async () => {
       try {
         return this.syncManager.getSyncStatus();
@@ -735,6 +750,107 @@ class NoteSageApp {
         return { success: true };
       } catch (error) {
         console.error('Failed to cleanup cache:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Note management operations
+    ipcMain.handle('delete-note', async (event, noteId) => {
+      try {
+        await this.offlineCache.deleteNote(noteId);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to delete note:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('archive-note', async (event, noteId, isArchived) => {
+      try {
+        const note = await this.offlineCache.getNote(noteId);
+        if (note) {
+          const updatedNote = {
+            ...note,
+            is_archived: isArchived,
+            updated_at: new Date().toISOString(),
+          };
+          await this.offlineCache.saveNote(updatedNote);
+          return { success: true, note: updatedNote };
+        }
+        return { success: false, error: 'Note not found' };
+      } catch (error) {
+        console.error('Failed to archive note:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('favorite-note', async (event, noteId, isFavorite) => {
+      try {
+        const note = await this.offlineCache.getNote(noteId);
+        if (note) {
+          const updatedNote = {
+            ...note,
+            is_favorite: isFavorite,
+            updated_at: new Date().toISOString(),
+          };
+          await this.offlineCache.saveNote(updatedNote);
+          return { success: true, note: updatedNote };
+        }
+        return { success: false, error: 'Note not found' };
+      } catch (error) {
+        console.error('Failed to favorite note:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Export operations
+    ipcMain.handle('export-note', async (event, noteId, format, filePath) => {
+      try {
+        const note = await this.offlineCache.getNote(noteId);
+        if (!note) {
+          return { success: false, error: 'Note not found' };
+        }
+
+        let content = '';
+        switch (format) {
+          case 'markdown':
+            content = `# ${note.title}\n\n${note.content}`;
+            break;
+          case 'html':
+            content = `<!DOCTYPE html>
+<html>
+<head>
+    <title>${note.title}</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
+        h1 { color: #333; border-bottom: 2px solid #eee; padding-bottom: 0.5rem; }
+        pre { background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto; }
+        code { background: #f5f5f5; padding: 0.2rem 0.4rem; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>${note.title}</h1>
+    <div>${note.content.replace(/\n/g, '<br>')}</div>
+    <hr>
+    <p><small>Created: ${new Date(note.created_at).toLocaleString()}</small></p>
+    <p><small>Modified: ${new Date(note.updated_at).toLocaleString()}</small></p>
+</body>
+</html>`;
+            break;
+          case 'pdf':
+            // For PDF export, we'll use the HTML content and let the renderer handle PDF generation
+            content = note.content;
+            break;
+          default:
+            return { success: false, error: 'Unsupported format' };
+        }
+
+        const fs = require('fs').promises;
+        await fs.writeFile(filePath, content, 'utf8');
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to export note:', error);
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
       }
     });

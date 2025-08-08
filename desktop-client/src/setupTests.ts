@@ -1,3 +1,6 @@
+// Jest DOM matchers
+import '@testing-library/jest-dom';
+
 // Mock electron API
 const mockElectronAPI = {
   connectToServer: jest.fn(),

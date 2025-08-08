@@ -129,6 +129,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('clear-cache'),
   cleanupCache: () =>
     ipcRenderer.invoke('cleanup-cache'),
+  triggerSync: () =>
+    ipcRenderer.invoke('trigger-sync'),
+
+  // Note management
+  deleteNote: (noteId: string) =>
+    ipcRenderer.invoke('delete-note', noteId),
+  archiveNote: (noteId: string, isArchived: boolean) =>
+    ipcRenderer.invoke('archive-note', noteId, isArchived),
+  favoriteNote: (noteId: string, isFavorite: boolean) =>
+    ipcRenderer.invoke('favorite-note', noteId, isFavorite),
+  exportNote: (noteId: string, format: string, filePath: string) =>
+    ipcRenderer.invoke('export-note', noteId, format, filePath),
 
   // Window management
   windowMinimize: () => 
@@ -226,6 +238,13 @@ declare global {
       getCacheStats: () => Promise<any>;
       clearCache: () => Promise<{ success: boolean; error?: string }>;
       cleanupCache: () => Promise<{ success: boolean; error?: string }>;
+      triggerSync: () => Promise<{ success: boolean; synced?: number; failed?: number; conflicts?: number; error?: string }>;
+
+      // Note management
+      deleteNote: (noteId: string) => Promise<{ success: boolean; error?: string }>;
+      archiveNote: (noteId: string, isArchived: boolean) => Promise<{ success: boolean; note?: any; error?: string }>;
+      favoriteNote: (noteId: string, isFavorite: boolean) => Promise<{ success: boolean; note?: any; error?: string }>;
+      exportNote: (noteId: string, format: string, filePath: string) => Promise<{ success: boolean; error?: string }>;
 
       // Window management
       windowMinimize: () => Promise<void>;

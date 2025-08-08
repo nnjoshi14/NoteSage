@@ -1,0 +1,448 @@
+.rich-text-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.editor-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #666;
+  font-style: italic;
+}
+
+.editor-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ProseMirror Editor Styles */
+.ProseMirror {
+  padding: 20px;
+  outline: none;
+  min-height: 300px;
+  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  color: #333;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Headings */
+.ProseMirror h1 {
+  font-size: 2em;
+  font-weight: 700;
+  margin: 1.5em 0 0.5em 0;
+  line-height: 1.2;
+  color: #1a1a1a;
+}
+
+.ProseMirror h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 1.3em 0 0.4em 0;
+  line-height: 1.3;
+  color: #1a1a1a;
+}
+
+.ProseMirror h3 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 1.2em 0 0.3em 0;
+  line-height: 1.4;
+  color: #1a1a1a;
+}
+
+/* Lists */
+.ProseMirror ul, .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 1em 0;
+}
+
+.ProseMirror li {
+  margin: 0.25em 0;
+}
+
+.ProseMirror li p {
+  margin: 0;
+}
+
+/* Task Lists */
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  margin: 0.5em 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-right: 0.5em;
+  user-select: none;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+}
+
+.ProseMirror ul[data-type="taskList"] input[type="checkbox"] {
+  cursor: pointer;
+}
+
+/* Code */
+.ProseMirror code {
+  background: #f1f3f4;
+  border-radius: 4px;
+  padding: 0.2em 0.4em;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 0.9em;
+  color: #e83e8c;
+}
+
+.ProseMirror pre {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1em;
+  margin: 1em 0;
+  overflow-x: auto;
+  border: 1px solid #e9ecef;
+}
+
+.ProseMirror pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.875em;
+  color: inherit;
+}
+
+/* Blockquotes */
+.ProseMirror blockquote {
+  border-left: 4px solid #ddd;
+  padding-left: 1em;
+  margin: 1em 0;
+  font-style: italic;
+  color: #666;
+}
+
+/* Tables */
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 1em 0;
+  overflow: hidden;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.ProseMirror table td,
+.ProseMirror table th {
+  min-width: 1em;
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.ProseMirror table th {
+  font-weight: 600;
+  background: #f8f9fa;
+}
+
+.ProseMirror table .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(200, 200, 255, 0.4);
+  pointer-events: none;
+}
+
+.ProseMirror table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #adf;
+  pointer-events: none;
+}
+
+/* Links */
+.ProseMirror a {
+  color: #0066cc;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ProseMirror a:hover {
+  color: #0052a3;
+}
+
+/* Images */
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 1em 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Mentions */
+.mention-person {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.mention-person:hover {
+  background: #bbdefb;
+}
+
+.mention-note {
+  background: #f3e5f5;
+  color: #7b1fa2;
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.mention-note:hover {
+  background: #e1bee7;
+}
+
+/* Callouts */
+.callout {
+  margin: 1em 0;
+  padding: 1em;
+  border-radius: 8px;
+  border-left: 4px solid;
+  background: #f8f9fa;
+}
+
+.callout.info {
+  border-left-color: #17a2b8;
+  background: #d1ecf1;
+}
+
+.callout.warning {
+  border-left-color: #ffc107;
+  background: #fff3cd;
+}
+
+.callout.error {
+  border-left-color: #dc3545;
+  background: #f8d7da;
+}
+
+.callout.success {
+  border-left-color: #28a745;
+  background: #d4edda;
+}
+
+.callout-title {
+  font-weight: 600;
+  margin-bottom: 0.5em;
+  display: flex;
+  align-items: center;
+}
+
+.callout-title::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  margin-right: 0.5em;
+  background-size: contain;
+}
+
+.callout.info .callout-title::before {
+  background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" fill="%2317a2b8" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>');
+}
+
+/* Mermaid Diagrams */
+.mermaid-container {
+  margin: 1em 0;
+  padding: 1em;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  text-align: center;
+}
+
+.mermaid-error {
+  color: #dc3545;
+  font-style: italic;
+  padding: 1em;
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+}
+
+/* Bubble Menu */
+.bubble-menu {
+  display: flex;
+  background: white;
+  padding: 0.2rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid #e9ecef;
+}
+
+.bubble-menu button {
+  border: none;
+  background: none;
+  padding: 0.4rem 0.6rem;
+  margin: 0 0.1rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #495057;
+  transition: all 0.2s;
+}
+
+.bubble-menu button:hover {
+  background: #f8f9fa;
+}
+
+.bubble-menu button.is-active {
+  background: #007bff;
+  color: white;
+}
+
+/* Floating Menu */
+.floating-menu {
+  display: flex;
+  background: white;
+  padding: 0.2rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid #e9ecef;
+}
+
+.floating-menu button {
+  border: none;
+  background: none;
+  padding: 0.4rem 0.6rem;
+  margin: 0 0.1rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #495057;
+  transition: all 0.2s;
+}
+
+.floating-menu button:hover {
+  background: #f8f9fa;
+}
+
+.floating-menu button.is-active {
+  background: #007bff;
+  color: white;
+}
+
+/* Markdown Editor */
+.markdown-editor {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  padding: 20px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+  background: #f8f9fa;
+}
+
+/* Character Count */
+.character-count {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: #6c757d;
+  background: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Block Menu */
+.block-menu {
+  position: absolute;
+  left: -40px;
+  top: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 10;
+}
+
+.ProseMirror:hover .block-menu {
+  opacity: 1;
+}
+
+.block-menu-trigger {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: #f8f9fa;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6c757d;
+  transition: all 0.2s;
+}
+
+.block-menu-trigger:hover {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.block-menu-trigger::before {
+  content: '⋮⋮';
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .ProseMirror {
+    padding: 16px;
+    font-size: 16px;
+  }
+  
+  .bubble-menu,
+  .floating-menu {
+    flex-wrap: wrap;
+  }
+  
+  .bubble-menu button,
+  .floating-menu button {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+  }
+}

@@ -1,0 +1,110 @@
+.notes-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #f8f9fa;
+}
+
+.notes-page-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 1rem;
+  color: #6c757d;
+}
+
+.notes-page-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 2rem;
+}
+
+.notes-page-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.notes-sidebar {
+  width: 400px;
+  min-width: 300px;
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  background-color: #fff;
+  border-right: 1px solid #e9ecef;
+  resize: horizontal;
+  overflow: hidden;
+}
+
+.notes-sidebar-header {
+  padding: 1rem;
+  border-bottom: 1px solid #e9ecef;
+  background-color: #f8f9fa;
+}
+
+.notes-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.notes-actions .btn {
+  justify-content: center;
+  font-size: 0.875rem;
+}
+
+.notes-editor-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .notes-page-content {
+    flex-direction: column;
+  }
+  
+  .notes-sidebar {
+    width: 100%;
+    max-width: none;
+    height: 40vh;
+    resize: none;
+  }
+  
+  .notes-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  
+  .notes-actions .btn {
+    flex: 1;
+    min-width: 120px;
+  }
+  
+  .notes-editor-area {
+    height: 60vh;
+  }
+}
+
+/* Handle for resizable sidebar */
+.notes-sidebar::-webkit-resizer {
+  background-color: #e9ecef;
+  border-radius: 0 0 0.25rem 0;
+}
+
+/* Focus states for accessibility */
+.notes-sidebar:focus-within {
+  border-right-color: #007bff;
+}
+
+.notes-editor-area:focus-within {
+  outline: 2px solid #007bff;
+  outline-offset: -2px;
+}

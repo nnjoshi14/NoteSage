@@ -1,0 +1,242 @@
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  border-radius: 8px 8px 0 0;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 48px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-right: 1px solid #dee2e6;
+  position: relative;
+}
+
+.toolbar-group:last-child {
+  border-right: none;
+}
+
+.toolbar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #495057;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  min-height: 32px;
+  position: relative;
+}
+
+.toolbar-button:hover {
+  background: #e9ecef;
+  color: #212529;
+}
+
+.toolbar-button:active {
+  background: #dee2e6;
+}
+
+.toolbar-button.active {
+  background: #007bff;
+  color: white;
+}
+
+.toolbar-button.active:hover {
+  background: #0056b3;
+}
+
+.toolbar-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar-button:disabled:hover {
+  background: transparent;
+  color: #495057;
+}
+
+/* Dropdown Styles */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown:hover .dropdown-menu {
+  display: block;
+}
+
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 120px;
+  padding: 4px 0;
+}
+
+.dropdown-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #495057;
+  transition: background-color 0.2s;
+}
+
+.dropdown-menu button:hover {
+  background: #f8f9fa;
+}
+
+/* Export Dropdown */
+.export-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.export-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 120px;
+  padding: 4px 0;
+}
+
+.export-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #495057;
+  transition: background-color 0.2s;
+}
+
+.export-menu button:hover {
+  background: #f8f9fa;
+}
+
+/* Special Button Styles */
+.toolbar-button strong {
+  font-weight: 700;
+}
+
+.toolbar-button em {
+  font-style: italic;
+}
+
+.toolbar-button s {
+  text-decoration: line-through;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .editor-toolbar {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+  
+  .toolbar-group {
+    padding: 0 4px;
+    gap: 2px;
+  }
+  
+  .toolbar-button {
+    padding: 4px 6px;
+    font-size: 12px;
+    min-height: 28px;
+  }
+  
+  /* Hide some less essential buttons on mobile */
+  .toolbar-group:nth-child(n+6) {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .editor-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  
+  .toolbar-group {
+    border-right: none;
+    border-bottom: 1px solid #dee2e6;
+    padding: 4px 0;
+    justify-content: center;
+  }
+  
+  .toolbar-group:last-child {
+    border-bottom: none;
+  }
+}
+
+/* Accessibility */
+.toolbar-button:focus {
+  outline: 2px solid #007bff;
+  outline-offset: 2px;
+}
+
+.toolbar-button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Tooltip-like titles */
+.toolbar-button[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  z-index: 1001;
+  pointer-events: none;
+}
+
+.toolbar-button[title]:hover::before {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 3px solid transparent;
+  border-bottom-color: #333;
+  z-index: 1001;
+  pointer-events: none;
+}

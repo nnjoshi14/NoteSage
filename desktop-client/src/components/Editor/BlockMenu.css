@@ -1,0 +1,144 @@
+.block-menu {
+  position: absolute;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.ProseMirror:hover .block-menu,
+.block-menu:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.block-menu-trigger {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: #f8f9fa;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6c757d;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.block-menu-trigger:hover {
+  background: #e9ecef;
+  color: #495057;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.block-menu-trigger::before {
+  content: '⋮⋮';
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: -1px;
+}
+
+.block-menu-dropdown {
+  position: absolute;
+  top: 0;
+  left: 32px;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  min-width: 140px;
+  z-index: 1000;
+}
+
+.block-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #495057;
+  transition: background-color 0.2s ease;
+  gap: 8px;
+}
+
+.block-menu-item:hover {
+  background: #f8f9fa;
+}
+
+.block-menu-item:active {
+  background: #e9ecef;
+}
+
+.block-menu-item.delete {
+  color: #dc3545;
+}
+
+.block-menu-item.delete:hover {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.block-menu-separator {
+  height: 1px;
+  background: #dee2e6;
+  margin: 4px 0;
+}
+
+/* Animation for menu appearance */
+.block-menu-dropdown {
+  animation: slideIn 0.15s ease-out;
+  transform-origin: left top;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateX(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .block-menu-trigger {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .block-menu-dropdown {
+    left: 36px;
+    min-width: 120px;
+  }
+  
+  .block-menu-item {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+}
+
+/* Focus styles for accessibility */
+.block-menu-trigger:focus {
+  outline: 2px solid #007bff;
+  outline-offset: 2px;
+}
+
+.block-menu-item:focus {
+  background: #e3f2fd;
+  outline: none;
+}
+
+/* Ensure menu stays visible when interacting */
+.block-menu-dropdown:hover {
+  opacity: 1;
+  pointer-events: auto;
+}

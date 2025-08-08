@@ -138,7 +138,7 @@ The implementation is divided into two main tracks that can be developed in para
 
 ### Phase 5: Desktop Client UI Components
 
-- [ ] 14. Build rich text editor with advanced features
+- [x] 14. Build rich text editor with advanced features
   - Implement TipTap/ProseMirror-based rich text editor
   - Create slash commands system for content insertion
   - Build auto-completion for @mentions, #references, and tags
@@ -149,7 +149,7 @@ The implementation is divided into two main tracks that can be developed in para
   - Write tests for editor functionality and content serialization
   - _Requirements: 1.1, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.16, 1.17, 1.18_
 
-- [ ] 15. Create note management interface
+- [x] 15. Create note management interface
   - Build note list view with sorting and filtering options
   - Implement note creation, editing, and deletion workflows
   - Create folder/category organization system
@@ -160,7 +160,7 @@ The implementation is divided into two main tracks that can be developed in para
   - Write tests for note management operations
   - _Requirements: 1.13, 1.14, 1.15, 1.20, 1.21, 1.22, 1.24, 1.25_
 
-- [ ] 16. Implement people management interface
+- [x] 16. Implement people management interface
   - Create people directory with list and detail views
   - Build person creation and editing forms
   - Implement person search and filtering capabilities
@@ -170,7 +170,7 @@ The implementation is divided into two main tracks that can be developed in para
   - Write tests for people management UI components
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ] 17. Build todo management and calendar views
+- [x] 17. Build todo management and calendar views
   - Create todo list interface with filtering and sorting
   - Implement todo creation with ID-based format
   - Build todo status management and completion tracking

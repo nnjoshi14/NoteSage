@@ -1,0 +1,23 @@
+[Unit]
+Description=Run NoteSage Server Maintenance
+Documentation=https://docs.notesage.com/maintenance
+Requires=notesage-maintenance.service
+
+[Timer]
+# Run maintenance daily at 3 AM
+OnCalendar=*-*-* 03:00:00
+
+# Run maintenance 15 minutes after boot if the system was down during scheduled time
+OnBootSec=15min
+
+# Add some randomization to avoid all servers running maintenance at the same time
+RandomizedDelaySec=30min
+
+# Ensure the timer is persistent across reboots
+Persistent=true
+
+# Prevent multiple instances from running simultaneously
+Unit=notesage-maintenance.service
+
+[Install]
+WantedBy=timers.target

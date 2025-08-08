@@ -23,7 +23,16 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "dist:all": "electron-builder --mac --linux",
+    "release": "npm run build && electron-builder --publish=always",
+    "release:mac": "npm run build && electron-builder --mac --publish=always",
+    "release:linux": "npm run build && electron-builder --linux --publish=always",
+    "sign:mac": "electron-builder --mac --publish=never",
+    "notarize:mac": "node scripts/notarize.js",
+    "build:release": "node scripts/build-release.js",
+    "test:installer": "node scripts/test-installer.js",
+    "validate:release": "npm run test:installer"
   },
   "keywords": [
     "notes",
@@ -34,6 +43,7 @@
   "author": "NoteSage Team",
   "license": "MIT",
   "devDependencies": {
+    "@electron/notarize": "^2.2.1",
     "@testing-library/jest-dom": "^6.6.4",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -87,6 +97,8 @@
     "axios": "^1.6.2",
     "better-sqlite3": "^9.2.2",
     "d3": "^7.9.0",
+    "electron-log": "^5.0.1",
+    "electron-updater": "^6.1.7",
     "lowlight": "^3.3.0",
     "mermaid": "^11.9.0",
     "react": "^18.2.0",
@@ -98,40 +110,130 @@
   "build": {
     "appId": "com.notesage.desktop",
     "productName": "NoteSage",
+    "copyright": "Copyright © 2024 NoteSage Team",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/",
+        "to": "assets/",
+        "filter": ["**/*"]
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "${APPLE_TEAM_ID}"
+      },
       "target": [
         {
           "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
         }
       ]
     },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "icon": "build/icon.icns",
+      "background": "build/dmg-background.png",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
     "linux": {
       "category": "Office",
+      "icon": "build/icon.png",
+      "synopsis": "Knowledge Management Application",
+      "description": "NoteSage is a powerful knowledge management application that helps you organize your notes, manage people connections, track todos, and visualize your knowledge graph.",
+      "desktop": {
+        "Name": "NoteSage",
+        "Comment": "Knowledge Management Application",
+        "Keywords": "notes;knowledge;management;productivity;",
+        "StartupWMClass": "NoteSage"
+      },
       "target": [
         {
           "target": "deb",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
+        },
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "tar.gz",
+          "arch": ["x64"]
         }
+      ]
+    },
+    "deb": {
+      "priority": "optional",
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libdrm2",
+        "libxcomposite1",
+        "libxdamage1",
+        "libxrandr2",
+        "libgbm1",
+        "libxkbcommon0",
+        "libasound2"
+      ],
+      "recommends": [
+        "pulseaudio"
       ]
     },
     "publish": {
       "provider": "github",
       "owner": "notesage",
-      "repo": "desktop"
-    }
+      "repo": "desktop",
+      "releaseType": "release"
+    },
+    "afterSign": "scripts/notarize.js",
+    "afterPack": "scripts/afterPack.js"
   }
 }

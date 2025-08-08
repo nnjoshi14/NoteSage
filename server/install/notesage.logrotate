@@ -1,0 +1,68 @@
+# NoteSage Server Log Rotation Configuration
+/var/log/notesage/*.log {
+    # Rotate daily
+    daily
+    
+    # Keep 30 days of logs
+    rotate 30
+    
+    # Compress old logs
+    compress
+    delaycompress
+    
+    # Don't rotate empty logs
+    notifempty
+    
+    # Don't fail if log file is missing
+    missingok
+    
+    # Create new log file with specified permissions
+    create 644 notesage notesage
+    
+    # Copy and truncate instead of moving (safer for running processes)
+    copytruncate
+    
+    # Run post-rotation script
+    postrotate
+        # Send SIGUSR1 to NoteSage to reopen log files
+        if systemctl is-active --quiet notesage; then
+            systemctl reload notesage > /dev/null 2>&1 || true
+        fi
+    endscript
+}
+
+# Backup logs
+/var/log/notesage/backup.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    notifempty
+    missingok
+    create 644 notesage notesage
+    copytruncate
+}
+
+# Health check logs
+/var/log/notesage/health-check.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    notifempty
+    missingok
+    create 644 notesage notesage
+    copytruncate
+}
+
+# Upgrade logs
+/var/log/notesage/upgrade.log {
+    monthly
+    rotate 12
+    compress
+    delaycompress
+    notifempty
+    missingok
+    create 644 notesage notesage
+    copytruncate
+}

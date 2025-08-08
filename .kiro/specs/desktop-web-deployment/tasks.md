@@ -215,7 +215,7 @@ The implementation is divided into two main tracks that can be developed in para
 
 ### Phase 7: Installation and Deployment
 
-- [ ] 21. Create server installation system for Ubuntu
+- [x] 21. Create server installation system for Ubuntu
   - Build automated installation script with dependency management
   - Create systemd service configuration and management
   - Implement database setup and initialization automation
@@ -225,7 +225,7 @@ The implementation is divided into two main tracks that can be developed in para
   - Write installation and deployment documentation
   - _Requirements: 9.1, 9.2, 9.3, 9.6, 7.2, 7.3_
 
-- [ ] 22. Build desktop client installers for Ubuntu and macOS
+- [x] 22. Build desktop client installers for Ubuntu and macOS
   - Create .deb package for Ubuntu with proper system integration
   - Build .dmg installer for macOS with standard app structure
   - Implement auto-updater system using electron-updater

@@ -1,0 +1,235 @@
+# NoteSage Server Configuration
+# This file contains all configuration options for the NoteSage server
+
+server:
+  # Server binding configuration
+  host: "0.0.0.0"
+  port: 8080
+  
+  # TLS/SSL configuration
+  tls:
+    enabled: false
+    cert_file: "/etc/notesage/ssl/server.crt"
+    key_file: "/etc/notesage/ssl/server.key"
+    auto_cert: false  # Enable Let's Encrypt auto-certificates
+    
+  # CORS configuration
+  cors:
+    enabled: true
+    origins: ["*"]  # In production, specify exact origins
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    headers: ["Authorization", "Content-Type"]
+    
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 100
+    burst: 20
+    
+  # Request timeouts
+  timeouts:
+    read: "30s"
+    write: "30s"
+    idle: "120s"
+
+database:
+  # Database type: postgres or sqlite
+  type: "postgres"
+  
+  # PostgreSQL configuration
+  host: "localhost"
+  port: 5432
+  name: "notesage"
+  user: "notesage"
+  password: "REPLACE_WITH_GENERATED_PASSWORD"
+  ssl_mode: "disable"  # disable, require, verify-ca, verify-full
+  
+  # Connection pool settings
+  max_connections: 25
+  max_idle_connections: 5
+  connection_timeout: "30s"
+  connection_lifetime: "1h"
+  
+  # SQLite configuration (alternative to PostgreSQL)
+  sqlite:
+    path: "/var/lib/notesage/notesage.db"
+    cache_size: 2000
+    busy_timeout: "30s"
+
+auth:
+  # JWT configuration
+  jwt_secret: "REPLACE_WITH_GENERATED_SECRET"
+  session_timeout: "24h"
+  refresh_token_timeout: "7d"
+  
+  # Password policy
+  password_min_length: 8
+  password_require_uppercase: true
+  password_require_lowercase: true
+  password_require_numbers: true
+  password_require_symbols: false
+  
+  # Account security
+  max_login_attempts: 5
+  lockout_duration: "15m"
+  
+  # OAuth providers (optional)
+  oauth:
+    google:
+      enabled: false
+      client_id: ""
+      client_secret: ""
+    github:
+      enabled: false
+      client_id: ""
+      client_secret: ""
+
+logging:
+  # Log level: debug, info, warn, error
+  level: "info"
+  
+  # Log output
+  file: "/var/log/notesage/server.log"
+  console: true
+  
+  # Log rotation
+  max_size: 100      # MB
+  max_backups: 5
+  max_age: 30        # days
+  compress: true
+  
+  # Structured logging
+  format: "json"     # json or text
+  
+  # Request logging
+  access_log:
+    enabled: true
+    file: "/var/log/notesage/access.log"
+
+features:
+  # AI integration
+  ai_enabled: true
+  ai_providers:
+    openai:
+      enabled: false
+      api_key: ""
+      model: "gpt-3.5-turbo"
+    gemini:
+      enabled: false
+      api_key: ""
+      model: "gemini-pro"
+    grok:
+      enabled: false
+      api_key: ""
+      model: "grok-1"
+  
+  # Real-time features
+  websocket_enabled: true
+  websocket_max_connections: 1000
+  
+  # File uploads
+  file_uploads: true
+  max_upload_size: "10MB"
+  allowed_file_types: ["jpg", "jpeg", "png", "gif", "pdf", "txt", "md"]
+  upload_path: "/var/lib/notesage/uploads"
+  
+  # Search features
+  full_text_search: true
+  search_index_update_interval: "5m"
+  
+  # Collaboration features
+  real_time_collaboration: true
+  version_history: true
+  max_versions_per_note: 50
+
+backup:
+  # Automatic backup configuration
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM (cron format)
+  retention_days: 30
+  storage_path: "/var/lib/notesage/backups"
+  compress: true
+  
+  # Backup types
+  database_backup: true
+  file_backup: true
+  
+  # Remote backup (optional)
+  remote:
+    enabled: false
+    type: "s3"  # s3, gcs, azure
+    bucket: ""
+    region: ""
+    access_key: ""
+    secret_key: ""
+
+monitoring:
+  # Health checks
+  health_check_interval: "30s"
+  health_check_timeout: "10s"
+  
+  # Metrics
+  metrics_enabled: true
+  metrics_port: 9090
+  metrics_path: "/metrics"
+  
+  # Prometheus integration
+  prometheus_enabled: false
+  
+  # Performance monitoring
+  slow_query_threshold: "1s"
+  request_timeout_threshold: "30s"
+
+security:
+  # Security headers
+  security_headers: true
+  
+  # Content Security Policy
+  csp:
+    enabled: true
+    policy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+  
+  # API security
+  api_key_required: false
+  api_rate_limiting: true
+  
+  # Data encryption
+  encrypt_sensitive_data: true
+  encryption_key: "REPLACE_WITH_GENERATED_KEY"
+
+cache:
+  # Redis configuration (optional)
+  redis:
+    enabled: false
+    host: "localhost"
+    port: 6379
+    password: ""
+    database: 0
+  
+  # In-memory cache
+  memory_cache:
+    enabled: true
+    max_size: "100MB"
+    ttl: "1h"
+
+# Environment-specific overrides
+environments:
+  development:
+    logging:
+      level: "debug"
+      console: true
+    server:
+      cors:
+        origins: ["http://localhost:3000", "http://localhost:8080"]
+  
+  production:
+    logging:
+      level: "info"
+      console: false
+    server:
+      tls:
+        enabled: true
+    security:
+      security_headers: true
+      csp:
+        enabled: true

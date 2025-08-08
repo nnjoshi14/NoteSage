@@ -67,6 +67,13 @@ const validChannels = [
   'sync-error',
   'conflict-detected',
   'connection-status-changed',
+  'auto-updater-checking',
+  'auto-updater-update-available',
+  'auto-updater-update-not-available',
+  'auto-updater-error',
+  'auto-updater-update-download-started',
+  'auto-updater-update-download-progress',
+  'auto-updater-update-downloaded',
 ];
 
 // Expose protected methods that allow the renderer process to use
@@ -174,6 +181,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAIConfig: (config: any) =>
     ipcRenderer.invoke('set-ai-config', config),
 
+  // Auto-updater
+  checkForUpdates: () =>
+    ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate: () =>
+    ipcRenderer.invoke('download-update'),
+  installUpdate: () =>
+    ipcRenderer.invoke('install-update'),
+
+  // Crash reporter
+  getCrashReports: () =>
+    ipcRenderer.invoke('get-crash-reports'),
+  deleteCrashReport: (reportId: string) =>
+    ipcRenderer.invoke('delete-crash-report', reportId),
+  clearCrashReports: () =>
+    ipcRenderer.invoke('clear-crash-reports'),
+
   // Version History APIs
   getVersionHistory: (noteId: string) => 
     ipcRenderer.invoke('version:getHistory', noteId),
@@ -194,6 +217,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Menu events with validation
   onMenuEvent: (channel: string, callback: (...args: any[]) => void) => {
+    if (validChannels.includes(channel)) {
+      ipcRenderer.on(channel, callback);
+    } else {
+      console.warn(`Invalid channel: ${channel}`);
+    }
+  },
+
+  // General event listener (for auto-updater and other events)
+  on: (channel: string, callback: (...args: any[]) => void) => {
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, callback);
     } else {
@@ -291,6 +323,16 @@ declare global {
       getAIConfig: () => Promise<any>;
       setAIConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
 
+      // Auto-updater
+      checkForUpdates: () => Promise<{ success: boolean; error?: string }>;
+      downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
+      installUpdate: () => Promise<{ success: boolean; error?: string }>;
+
+      // Crash reporter
+      getCrashReports: () => Promise<any[]>;
+      deleteCrashReport: (reportId: string) => Promise<{ success: boolean; error?: string }>;
+      clearCrashReports: () => Promise<{ success: boolean; error?: string }>;
+
       // Version History APIs
       getVersionHistory: (noteId: string) => Promise<{ versions: any[] }>;
       getVersion: (noteId: string, version: number) => Promise<{ version: any }>;
@@ -304,6 +346,7 @@ declare global {
 
       // Event handling
       onMenuEvent: (channel: string, callback: (...args: any[]) => void) => void;
+      on: (channel: string, callback: (...args: any[]) => void) => void;
       removeAllListeners: (channel: string) => void;
       removeListener: (channel: string, callback: (...args: any[]) => void) => void;
 

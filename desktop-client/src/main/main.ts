@@ -1,8 +1,11 @@
 import { app, BrowserWindow, Menu, ipcMain, shell, dialog, nativeTheme } from 'electron';
 import * as path from 'path';
+import log from 'electron-log';
 import { ServerConnectionManager } from './server-connection';
 import { OfflineCache } from './offline-cache';
 import { SyncManager } from './sync-manager';
+import { autoUpdaterService } from './auto-updater';
+import { crashReporterService } from './crash-reporter';
 
 // Security: Disable node integration and enable context isolation by default
 app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
@@ -27,6 +30,10 @@ class NoteSageApp {
   };
 
   constructor() {
+    // Initialize logging
+    log.transports.file.level = 'info';
+    log.transports.console.level = 'debug';
+    
     this.serverConnection = new ServerConnectionManager();
     this.offlineCache = new OfflineCache();
     this.syncManager = new SyncManager(this.serverConnection, this.offlineCache);
@@ -67,6 +74,7 @@ class NoteSageApp {
       this.createWindow();
       this.setupMenu();
       this.setupIPC();
+      this.setupAutoUpdater();
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -152,6 +160,20 @@ class NoteSageApp {
       shell.openExternal(url);
       return { action: 'deny' };
     });
+  }
+
+  private setupAutoUpdater(): void {
+    if (!this.mainWindow) return;
+    
+    // Set the main window for the auto-updater
+    autoUpdaterService.setMainWindow(this.mainWindow);
+    
+    // Check for updates on startup (after a delay)
+    setTimeout(() => {
+      if (process.env.NODE_ENV !== 'development') {
+        autoUpdaterService.checkForUpdatesAndNotify();
+      }
+    }, 5000);
   }
 
   private loadWindowState(): void {
@@ -940,9 +962,70 @@ class NoteSageApp {
       }
     });
 
+    // Auto-updater IPC handlers
+    ipcMain.handle('check-for-updates', async () => {
+      try {
+        await autoUpdaterService.checkForUpdates();
+        return { success: true };
+      } catch (error) {
+        log.error('Failed to check for updates:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('download-update', async () => {
+      try {
+        await autoUpdaterService.downloadUpdate();
+        return { success: true };
+      } catch (error) {
+        log.error('Failed to download update:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('install-update', () => {
+      try {
+        autoUpdaterService.quitAndInstall();
+        return { success: true };
+      } catch (error) {
+        log.error('Failed to install update:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Crash reporter IPC handlers
+    ipcMain.handle('get-crash-reports', () => {
+      try {
+        return crashReporterService.getCrashReports();
+      } catch (error) {
+        log.error('Failed to get crash reports:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('delete-crash-report', (event, reportId) => {
+      try {
+        const success = crashReporterService.deleteCrashReport(reportId);
+        return { success };
+      } catch (error) {
+        log.error('Failed to delete crash report:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    ipcMain.handle('clear-crash-reports', () => {
+      try {
+        crashReporterService.clearAllCrashReports();
+        return { success: true };
+      } catch (error) {
+        log.error('Failed to clear crash reports:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
     // Error handling
     process.on('uncaughtException', (error) => {
-      console.error('Uncaught Exception:', error);
+      log.error('Uncaught Exception:', error);
       this.mainWindow?.webContents.send('main-process-error', {
         type: 'uncaughtException',
         message: error.message,
@@ -951,7 +1034,7 @@ class NoteSageApp {
     });
 
     process.on('unhandledRejection', (reason, promise) => {
-      console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+      log.error('Unhandled Rejection at:', promise, 'reason:', reason);
       this.mainWindow?.webContents.send('main-process-error', {
         type: 'unhandledRejection',
         message: reason instanceof Error ? reason.message : String(reason),

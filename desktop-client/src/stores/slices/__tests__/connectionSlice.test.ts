@@ -5,6 +5,7 @@ import connectionReducer, {
   checkConnectionStatus,
   clearError,
   ConnectionState,
+  ServerConfig,
 } from '../connectionSlice';
 
 // Mock the electron API
@@ -20,7 +21,16 @@ Object.defineProperty(window, 'electronAPI', {
 });
 
 describe('connectionSlice', () => {
-  let store: ReturnType<typeof configureStore>;
+  let store: ReturnType<typeof configureStore<{ connection: ConnectionState }>>;
+
+  const serverConfig: ServerConfig = {
+    id: 'test-server-1',
+    name: 'Test Server',
+    url: 'localhost',
+    port: 8080,
+    username: 'testuser',
+    password: 'testpass',
+  };
 
   beforeEach(() => {
     store = configureStore({
@@ -38,6 +48,7 @@ describe('connectionSlice', () => {
         connected: false,
         isInitialized: false,
         isConnecting: false,
+        profiles: [],
       });
     });
   });
@@ -49,6 +60,7 @@ describe('connectionSlice', () => {
         connected: false,
         isInitialized: true,
         isConnecting: false,
+        profiles: [],
         error: 'Some error',
       };
 
@@ -60,12 +72,6 @@ describe('connectionSlice', () => {
   });
 
   describe('connectToServer async thunk', () => {
-    const serverConfig = {
-      url: 'localhost',
-      port: 8080,
-      username: 'testuser',
-      password: 'testpass',
-    };
 
     it('should handle successful connection', async () => {
       mockElectronAPI.connectToServer.mockResolvedValue({ success: true });
@@ -77,14 +83,24 @@ describe('connectionSlice', () => {
       expect(state.isConnecting).toBe(false);
       expect(state.config).toEqual(serverConfig);
       expect(state.serverUrl).toBe('http://localhost:8080');
+      expect(state.profileId).toBe('test-server-1');
+      expect(state.profileName).toBe('Test Server');
       expect(state.error).toBeUndefined();
     });
 
     it('should handle connection failure', async () => {
       const errorMessage = 'Connection failed';
-      mockElectronAPI.connectToServer.mockRejectedValue(new Error(errorMessage));
+      mockElectronAPI.connectToServer.mockResolvedValue({
+        success: false,
+        error: errorMessage
+      });
 
-      await store.dispatch(connectToServer(serverConfig));
+      try {
+        await store.dispatch(connectToServer(serverConfig));
+      } catch (error) {
+        // Expected to throw
+      }
+
       const state = store.getState().connection;
 
       expect(state.connected).toBe(false);
@@ -107,31 +123,26 @@ describe('connectionSlice', () => {
 
   describe('disconnectFromServer async thunk', () => {
     it('should handle successful disconnection', async () => {
-      // Set initial connected state
-      const initialState: ConnectionState = {
-        connected: true,
-        isInitialized: true,
-        isConnecting: false,
-        config: {
-          url: 'localhost',
-          port: 8080,
-          username: 'testuser',
-          password: 'testpass',
-        },
-        serverUrl: 'http://localhost:8080',
-        lastSync: '2023-01-01T00:00:00Z',
-      };
+      // First connect to set up initial state
+      mockElectronAPI.connectToServer.mockResolvedValue({ success: true });
+      await store.dispatch(connectToServer(serverConfig));
 
+      // Then disconnect
       mockElectronAPI.disconnectFromServer.mockResolvedValue({ success: true });
+      await store.dispatch(disconnectFromServer());
 
-      const action = await store.dispatch(disconnectFromServer());
-      const newState = connectionReducer(initialState, action);
+      const state = store.getState().connection;
 
-      expect(newState.connected).toBe(false);
-      expect(newState.config).toBeUndefined();
-      expect(newState.serverUrl).toBeUndefined();
-      expect(newState.lastSync).toBeUndefined();
-      expect(newState.error).toBeUndefined();
+      expect(state.connected).toBe(false);
+      expect(state.config).toBeUndefined();
+      expect(state.serverUrl).toBeUndefined();
+      expect(state.profileId).toBeUndefined();
+      expect(state.profileName).toBeUndefined();
+      expect(state.lastSync).toBeUndefined();
+      expect(state.error).toBeUndefined();
+      expect(state.isReconnecting).toBe(false);
+      expect(state.userInfo).toBeUndefined();
+      expect(state.currentProfile).toBeUndefined();
     });
   });
 
@@ -140,7 +151,17 @@ describe('connectionSlice', () => {
       const statusData = {
         connected: true,
         serverUrl: 'http://localhost:8080',
+        profileId: 'test-profile',
+        profileName: 'Test Profile',
         lastSync: '2023-01-01T00:00:00Z',
+        error: undefined,
+        isReconnecting: false,
+        apiVersion: '1.0.0',
+        userInfo: {
+          id: 'user-1',
+          username: 'testuser',
+          email: 'test@example.com',
+        },
       };
 
       mockElectronAPI.getConnectionStatus.mockResolvedValue(statusData);
@@ -150,8 +171,16 @@ describe('connectionSlice', () => {
 
       expect(state.connected).toBe(true);
       expect(state.serverUrl).toBe('http://localhost:8080');
+      expect(state.profileId).toBe('test-profile');
+      expect(state.profileName).toBe('Test Profile');
       expect(state.lastSync).toBe('2023-01-01T00:00:00Z');
       expect(state.isInitialized).toBe(true);
+      expect(state.apiVersion).toBe('1.0.0');
+      expect(state.userInfo).toEqual({
+        id: 'user-1',
+        username: 'testuser',
+        email: 'test@example.com',
+      });
     });
   });
 });

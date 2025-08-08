@@ -40,7 +40,6 @@ export const CalloutNodeView: React.FC<CalloutNodeViewProps> = ({
   node,
   updateAttributes,
   selected,
-  editor,
 }) => {
   const [showTypeSelector, setShowTypeSelector] = useState(false);
   const currentType = node.attrs.type || 'info';
@@ -81,3 +80,22 @@ export const CalloutNodeView: React.FC<CalloutNodeViewProps> = ({
                 {Object.entries(calloutConfig).map(([type, typeConfig]) => (
                   <button
                     key={type}
+                    className={`callout-type-option ${type === currentType ? 'active' : ''}`}
+                    onClick={() => handleTypeChange(type as 'info' | 'warning' | 'error' | 'success')}
+                  >
+                    <span className="callout-icon">{typeConfig.icon}</span>
+                    <span className="callout-title">{typeConfig.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="callout-content">
+          <NodeViewContent />
+        </div>
+      </div>
+    </NodeViewWrapper>
+  );
+};

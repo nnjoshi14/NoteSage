@@ -288,7 +288,7 @@ const connectionSlice = createSlice({
         }
       })
       .addCase(getCurrentProfile.fulfilled, (state, action) => {
-        state.currentProfile = action.payload;
+        state.currentProfile = action.payload || undefined;
       });
   },
 });

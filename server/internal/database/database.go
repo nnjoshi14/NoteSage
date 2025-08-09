@@ -32,7 +32,14 @@ func Initialize(cfg config.DatabaseConfig) (*gorm.DB, error) {
 			cfg.Host, cfg.User, cfg.Password, cfg.Name, cfg.Port, cfg.SSLMode)
 		db, err = gorm.Open(postgres.Open(dsn), gormConfig)
 	case "sqlite":
-		dsn := cfg.Name + ".db?_foreign_keys=on&_journal_mode=WAL&_synchronous=NORMAL&_cache_size=1000000000"
+		var dsn string
+		if cfg.Name == ":memory:" {
+			// For true in-memory database, don't append .db
+			dsn = ":memory:?_foreign_keys=on&_journal_mode=WAL&_synchronous=NORMAL&_cache_size=1000000000"
+		} else {
+			// For file-based database, append .db
+			dsn = cfg.Name + ".db?_foreign_keys=on&_journal_mode=WAL&_synchronous=NORMAL&_cache_size=1000000000"
+		}
 		db, err = gorm.Open(sqlite.Open(dsn), gormConfig)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", cfg.Type)

@@ -33,7 +33,7 @@ func setupLoadTest(t *testing.T) {
 		cfg := &config.Config{
 			Database: config.DatabaseConfig{
 				Type: "sqlite",
-				Name: ":memory:",
+				Name: ":memory:", // Use true in-memory database
 			},
 			Auth: config.AuthConfig{
 				JWTSecret:      "test-secret",
@@ -48,12 +48,8 @@ func setupLoadTest(t *testing.T) {
 			},
 		}
 
-		var err error
-		loadTestDB, err = database.Initialize(cfg.Database)
-		require.NoError(t, err)
-
-		err = database.Migrate(loadTestDB)
-		require.NoError(t, err)
+		// Use SetupTestDB to ensure proper database setup with migrations
+		loadTestDB = database.SetupTestDB(t)
 
 		gin.SetMode(gin.TestMode)
 		appRouter := router.Setup(loadTestDB, cfg)

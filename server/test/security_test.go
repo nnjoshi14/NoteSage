@@ -25,7 +25,7 @@ func setupSecurityTest(t *testing.T) (*httptest.Server, *gorm.DB, string) {
 	cfg := &config.Config{
 		Database: config.DatabaseConfig{
 			Type: "sqlite",
-			Name: ":memory:",
+			Name: ":memory:", // Use true in-memory database
 		},
 		Auth: config.AuthConfig{
 			JWTSecret:      "test-secret",

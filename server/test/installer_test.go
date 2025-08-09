@@ -52,10 +52,10 @@ func (suite *InstallerTestSuite) createMockInstallation() {
 
 	// Create mock files
 	files := map[string]string{
-		"opt/notesage/notesage-server":     "#!/bin/bash\necho 'NoteSage Server v1.0.0'\n",
-		"etc/notesage/config.yaml":        "server:\n  port: 8080\ndatabase:\n  type: sqlite\n",
+		"opt/notesage/notesage-server":        "#!/bin/bash\necho 'NoteSage Server v1.0.0'\n",
+		"etc/notesage/config.yaml":            "server:\n  port: 8080\ndatabase:\n  type: sqlite\n",
 		"etc/systemd/system/notesage.service": "[Unit]\nDescription=NoteSage Server\n[Service]\nExecStart=/opt/notesage/notesage-server\n",
-		"var/lib/notesage/data.db":        "mock database content",
+		"var/lib/notesage/data.db":            "mock database content",
 	}
 
 	for path, content := range files {
@@ -71,7 +71,7 @@ func (suite *InstallerTestSuite) createMockInstallation() {
 
 func (suite *InstallerTestSuite) TestInstallScript() {
 	// Copy install script to test directory
-	installScript := filepath.Join(suite.originalDir, "install", "install.sh")
+	installScript := filepath.Join(suite.originalDir, "..", "install", "install.sh")
 	testInstallScript := filepath.Join(suite.testDir, "install.sh")
 
 	// Read and modify install script for testing
@@ -102,7 +102,7 @@ func (suite *InstallerTestSuite) TestInstallScript() {
 
 func (suite *InstallerTestSuite) TestUpgradeScript() {
 	// Copy upgrade script to test directory
-	upgradeScript := filepath.Join(suite.originalDir, "install", "upgrade.sh")
+	upgradeScript := filepath.Join(suite.originalDir, "..", "install", "upgrade.sh")
 	testUpgradeScript := filepath.Join(suite.testDir, "upgrade.sh")
 
 	content, err := os.ReadFile(upgradeScript)
@@ -136,7 +136,7 @@ func (suite *InstallerTestSuite) TestUpgradeScript() {
 }
 
 func (suite *InstallerTestSuite) TestBackupScript() {
-	backupScript := filepath.Join(suite.originalDir, "install", "backup.sh")
+	backupScript := filepath.Join(suite.originalDir, "..", "install", "backup.sh")
 	testBackupScript := filepath.Join(suite.testDir, "backup.sh")
 
 	content, err := os.ReadFile(backupScript)
@@ -172,7 +172,7 @@ func (suite *InstallerTestSuite) TestRestoreScript() {
 	suite.Require().NoError(err)
 
 	// Run restore script
-	restoreScript := filepath.Join(suite.originalDir, "install", "restore.sh")
+	restoreScript := filepath.Join(suite.originalDir, "..", "install", "restore.sh")
 	testRestoreScript := filepath.Join(suite.testDir, "restore.sh")
 
 	content, err := os.ReadFile(restoreScript)
@@ -198,7 +198,7 @@ func (suite *InstallerTestSuite) TestRestoreScript() {
 }
 
 func (suite *InstallerTestSuite) TestHealthCheck() {
-	healthScript := filepath.Join(suite.originalDir, "install", "health-check.sh")
+	healthScript := filepath.Join(suite.originalDir, "..", "install", "health-check.sh")
 	testHealthScript := filepath.Join(suite.testDir, "health-check.sh")
 
 	content, err := os.ReadFile(healthScript)
@@ -313,5 +313,11 @@ func TestInstallerSuite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping installer tests in short mode")
 	}
+
+	// Skip if not running as root (installer scripts require root privileges)
+	if os.Geteuid() != 0 {
+		t.Skip("Skipping installer tests - requires root privileges")
+	}
+
 	suite.Run(t, new(InstallerTestSuite))
 }

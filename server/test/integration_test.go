@@ -24,7 +24,7 @@ func setupIntegrationTest(t *testing.T) (*httptest.Server, *gorm.DB, string) {
 	cfg := &config.Config{
 		Database: config.DatabaseConfig{
 			Type: "sqlite",
-			Name: ":memory:",
+			Name: ":memory:", // Use true in-memory database
 		},
 		Auth: config.AuthConfig{
 			JWTSecret:      "test-secret",
@@ -82,30 +82,6 @@ func setupIntegrationTest(t *testing.T) (*httptest.Server, *gorm.DB, string) {
 	})
 
 	return server, db, token
-}
-
-func makeAuthenticatedRequest(t *testing.T, server *httptest.Server, token, method, path string, body interface{}) *http.Response {
-	t.Helper()
-
-	var reqBody *bytes.Buffer
-	if body != nil {
-		bodyJSON, _ := json.Marshal(body)
-		reqBody = bytes.NewBuffer(bodyJSON)
-	} else {
-		reqBody = bytes.NewBuffer([]byte{})
-	}
-
-	req, err := http.NewRequest(method, server.URL+path, reqBody)
-	require.NoError(t, err)
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	require.NoError(t, err)
-
-	return resp
 }
 
 func TestNoteWorkflow(t *testing.T) {

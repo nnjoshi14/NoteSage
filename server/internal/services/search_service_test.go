@@ -16,7 +16,7 @@ import (
 
 func setupSearchTestDB(t *testing.T) (*gorm.DB, models.User) {
 	db := database.SetupTestDB(t)
-	
+
 	// Create test user with unique username
 	userID := uuid.New()
 	user := models.User{
@@ -28,7 +28,7 @@ func setupSearchTestDB(t *testing.T) (*gorm.DB, models.User) {
 		IsActive: true,
 	}
 	require.NoError(t, db.Create(&user).Error)
-	
+
 	// Create test notes
 	notes := []models.Note{
 		{
@@ -41,12 +41,12 @@ func setupSearchTestDB(t *testing.T) (*gorm.DB, models.User) {
 			IsPinned: true,
 		},
 		{
-			ID:       uuid.New(),
-			UserID:   user.ID,
-			Title:    "JavaScript Best Practices",
-			Content:  models.JSONB{"type": "doc", "content": []interface{}{map[string]interface{}{"type": "paragraph", "content": []interface{}{map[string]interface{}{"type": "text", "text": "Modern JavaScript development practices and patterns"}}}}},
-			Category: "Note",
-			Tags:     pq.StringArray{"javascript", "best-practices"},
+			ID:         uuid.New(),
+			UserID:     user.ID,
+			Title:      "JavaScript Best Practices",
+			Content:    models.JSONB{"type": "doc", "content": []interface{}{map[string]interface{}{"type": "paragraph", "content": []interface{}{map[string]interface{}{"type": "text", "text": "Modern JavaScript development practices and patterns"}}}}},
+			Category:   "Note",
+			Tags:       pq.StringArray{"javascript", "best-practices"},
 			IsFavorite: true,
 		},
 		{
@@ -75,20 +75,20 @@ func setupSearchTestDB(t *testing.T) (*gorm.DB, models.User) {
 			Tags:     pq.StringArray{"python", "data-science", "pandas"},
 		},
 	}
-	
+
 	for _, note := range notes {
 		require.NoError(t, db.Create(&note).Error)
 	}
-	
+
 	return db, user
 }
 
 func TestSearchService_FullTextSearch(t *testing.T) {
 	db, user := setupSearchTestDB(t)
 	defer database.CleanupTestDB(db)
-	
+
 	service := NewSearchService(db)
-	
+
 	tests := []struct {
 		name           string
 		request        SearchRequest
@@ -177,21 +177,21 @@ func TestSearchService_FullTextSearch(t *testing.T) {
 			expectedCount: 4, // All except archived
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			response, err := service.FullTextSearch(user.ID, tt.request)
 			require.NoError(t, err)
-			
+
 			assert.Equal(t, int64(tt.expectedCount), response.Total)
 			assert.Equal(t, tt.expectedCount, len(response.Results))
-			
+
 			if len(tt.expectedTitles) > 0 {
 				actualTitles := make([]string, len(response.Results))
 				for i, result := range response.Results {
 					actualTitles[i] = result.Note.Title
 				}
-				
+
 				for _, expectedTitle := range tt.expectedTitles {
 					assert.Contains(t, actualTitles, expectedTitle)
 				}
@@ -203,21 +203,21 @@ func TestSearchService_FullTextSearch(t *testing.T) {
 func TestSearchService_FullTextSearchWithSnippets(t *testing.T) {
 	db, user := setupSearchTestDB(t)
 	defer database.CleanupTestDB(db)
-	
+
 	service := NewSearchService(db)
-	
+
 	request := SearchRequest{
 		Query:           "Go Programming",
 		IncludeSnippets: true,
 		Limit:           10,
 	}
-	
+
 	response, err := service.FullTextSearch(user.ID, request)
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, int64(1), response.Total)
 	assert.Equal(t, 1, len(response.Results))
-	
+
 	result := response.Results[0]
 	assert.Equal(t, "Go Programming Tutorial", result.Note.Title)
 	assert.Greater(t, result.Score, 0.0)
@@ -228,9 +228,9 @@ func TestSearchService_FullTextSearchWithSnippets(t *testing.T) {
 func TestSearchService_FullTextSearchSorting(t *testing.T) {
 	db, user := setupSearchTestDB(t)
 	defer database.CleanupTestDB(db)
-	
+
 	service := NewSearchService(db)
-	
+
 	tests := []struct {
 		name      string
 		sortBy    string
@@ -244,7 +244,7 @@ func TestSearchService_FullTextSearchSorting(t *testing.T) {
 		{"sort by updated desc", "updated", "desc"},
 		{"sort by relevance", "relevance", "desc"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			request := SearchRequest{
@@ -252,18 +252,32 @@ func TestSearchService_FullTextSearchSorting(t *testing.T) {
 				SortOrder: tt.sortOrder,
 				Limit:     10,
 			}
-			
+
 			response, err := service.FullTextSearch(user.ID, request)
 			require.NoError(t, err)
-			
+
 			assert.Greater(t, len(response.Results), 0)
-			
+
 			// Verify sorting worked (basic check)
 			if tt.sortBy == "title" && len(response.Results) > 1 {
+				// For title sorting, we need to account for pinned priority
+				// Pinned notes come first, then unpinned notes, each group sorted by title
 				if tt.sortOrder == "asc" {
-					assert.LessOrEqual(t, response.Results[0].Note.Title, response.Results[1].Note.Title)
+					// For ascending, check that titles are in ascending order within each pinned/unpinned group
+					for i := 0; i < len(response.Results)-1; i++ {
+						// If both notes have the same pinned status, check title order
+						if response.Results[i].Note.IsPinned == response.Results[i+1].Note.IsPinned {
+							assert.LessOrEqual(t, response.Results[i].Note.Title, response.Results[i+1].Note.Title)
+						}
+					}
 				} else {
-					assert.GreaterOrEqual(t, response.Results[0].Note.Title, response.Results[1].Note.Title)
+					// For descending, check that titles are in descending order within each pinned/unpinned group
+					for i := 0; i < len(response.Results)-1; i++ {
+						// If both notes have the same pinned status, check title order
+						if response.Results[i].Note.IsPinned == response.Results[i+1].Note.IsPinned {
+							assert.GreaterOrEqual(t, response.Results[i].Note.Title, response.Results[i+1].Note.Title)
+						}
+					}
 				}
 			}
 		})
@@ -273,9 +287,9 @@ func TestSearchService_FullTextSearchSorting(t *testing.T) {
 func TestSearchService_QuickSwitcher(t *testing.T) {
 	db, user := setupSearchTestDB(t)
 	defer database.CleanupTestDB(db)
-	
+
 	service := NewSearchService(db)
-	
+
 	tests := []struct {
 		name          string
 		query         string
@@ -317,14 +331,14 @@ func TestSearchService_QuickSwitcher(t *testing.T) {
 			expectedCount: 0,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			results, err := service.QuickSwitcher(user.ID, tt.query, tt.limit)
 			require.NoError(t, err)
-			
+
 			assert.Equal(t, tt.expectedCount, len(results))
-			
+
 			if tt.expectTitle != "" && len(results) > 0 {
 				assert.Equal(t, tt.expectTitle, results[0].Title)
 				assert.Greater(t, results[0].Score, 0.0)
@@ -336,9 +350,9 @@ func TestSearchService_QuickSwitcher(t *testing.T) {
 func TestSearchService_GetRecentNotes(t *testing.T) {
 	db, user := setupSearchTestDB(t)
 	defer database.CleanupTestDB(db)
-	
+
 	service := NewSearchService(db)
-	
+
 	tests := []struct {
 		name          string
 		limit         int
@@ -360,14 +374,14 @@ func TestSearchService_GetRecentNotes(t *testing.T) {
 			expectedCount: 4, // All non-archived notes
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			results, err := service.GetRecentNotes(user.ID, tt.limit)
 			require.NoError(t, err)
-			
+
 			assert.Equal(t, tt.expectedCount, len(results))
-			
+
 			// Verify results are sorted by updated_at desc
 			if len(results) > 1 {
 				assert.True(t, results[0].UpdatedAt.After(results[1].UpdatedAt) || results[0].UpdatedAt.Equal(results[1].UpdatedAt))
@@ -378,7 +392,7 @@ func TestSearchService_GetRecentNotes(t *testing.T) {
 
 func TestSearchService_CalculateRelevanceScore(t *testing.T) {
 	service := NewSearchService(nil)
-	
+
 	note := models.Note{
 		Title:      "Go Programming Tutorial",
 		Content:    models.JSONB{"type": "doc", "content": "comprehensive guide to go programming"},
@@ -388,7 +402,7 @@ func TestSearchService_CalculateRelevanceScore(t *testing.T) {
 		IsFavorite: false,
 		UpdatedAt:  time.Now().Add(-1 * time.Hour), // Recent
 	}
-	
+
 	tests := []struct {
 		name          string
 		query         string
@@ -426,11 +440,11 @@ func TestSearchService_CalculateRelevanceScore(t *testing.T) {
 			comparison:    "equal",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			score := service.calculateRelevanceScore(note, tt.query)
-			
+
 			switch tt.comparison {
 			case "greater":
 				assert.Greater(t, score, tt.expectedScore)
@@ -445,7 +459,7 @@ func TestSearchService_CalculateRelevanceScore(t *testing.T) {
 
 func TestSearchService_CalculateFuzzyScore(t *testing.T) {
 	service := NewSearchService(nil)
-	
+
 	tests := []struct {
 		name          string
 		title         string
@@ -489,11 +503,11 @@ func TestSearchService_CalculateFuzzyScore(t *testing.T) {
 			comparison:    "equal",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			score := service.calculateFuzzyScore(tt.title, tt.query)
-			
+
 			switch tt.comparison {
 			case "greater":
 				assert.Greater(t, score, tt.expectedScore)
@@ -508,13 +522,13 @@ func TestSearchService_CalculateFuzzyScore(t *testing.T) {
 
 func TestSearchService_DetermineMatchType(t *testing.T) {
 	service := NewSearchService(nil)
-	
+
 	note := models.Note{
 		Title:    "Go Programming Tutorial",
 		Category: "Tutorial",
 		Tags:     pq.StringArray{"go", "programming", "tutorial"},
 	}
-	
+
 	tests := []struct {
 		name         string
 		query        string
@@ -546,7 +560,7 @@ func TestSearchService_DetermineMatchType(t *testing.T) {
 			expectedType: "all",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			matchType := service.determineMatchType(note, tt.query)
@@ -557,14 +571,14 @@ func TestSearchService_DetermineMatchType(t *testing.T) {
 
 func TestSearchService_GenerateSnippets(t *testing.T) {
 	service := NewSearchService(nil)
-	
+
 	note := models.Note{
 		Title:   "Go Programming Tutorial",
 		Content: models.JSONB{"type": "doc", "content": "This is a comprehensive guide to Go programming language"},
 	}
-	
+
 	snippets := service.generateSnippets(note, "programming")
-	
+
 	assert.NotEmpty(t, snippets)
 	assert.Contains(t, snippets[0], "**Programming**")
 }

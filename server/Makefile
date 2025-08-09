@@ -23,6 +23,12 @@ clean:
 	rm -rf tmp/
 	rm -f coverage.out coverage.html
 
+# Clean test database files
+clean-test-db:
+	find . -name "testdb_*.db*" -type f -delete
+	find . -name ":memory:.db*" -type f -delete
+	@echo "Test database files cleaned up"
+
 # Development mode with hot reload
 dev:
 	air

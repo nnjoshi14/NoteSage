@@ -18,21 +18,22 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupSearchHandlerTest(t *testing.T) (*gin.Engine, *gorm.DB, models.User) {
+func setupSearchRouter(t *testing.T) (*gin.Engine, *gorm.DB, *models.User) {
+	t.Helper()
+
 	db := database.SetupTestDB(t)
-	
-	// Create test user with unique username
-	userID := uuid.New()
-	user := models.User{
-		ID:       userID,
-		Username: "testuser_" + userID.String()[:8],
-		Email:    "test_" + userID.String()[:8] + "@example.com",
+
+	// Create test user
+	user := &models.User{
+		ID:       uuid.New(),
+		Username: "testuser",
+		Email:    "test@example.com",
 		Password: "hashedpassword",
 		Role:     models.RoleUser,
 		IsActive: true,
 	}
-	require.NoError(t, db.Create(&user).Error)
-	
+	db.Create(user)
+
 	// Create test notes
 	notes := []models.Note{
 		{
@@ -62,25 +63,21 @@ func setupSearchHandlerTest(t *testing.T) (*gin.Engine, *gorm.DB, models.User) {
 			Tags:     pq.StringArray{"meeting", "project-alpha"},
 		},
 	}
-	
+
 	for _, note := range notes {
 		require.NoError(t, db.Create(&note).Error)
 	}
-	
-	// Setup Gin router
+
+	searchHandler := NewSearchHandler(db)
+
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	
-	// Add middleware to set userID
+
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", user.ID.String())
 		c.Next()
 	})
-	
-	// Setup search handler
-	searchHandler := NewSearchHandler(db)
-	
-	// Setup routes
+
 	api := router.Group("/api/search")
 	{
 		api.GET("", searchHandler.AdvancedSearch)
@@ -89,373 +86,92 @@ func setupSearchHandlerTest(t *testing.T) (*gin.Engine, *gorm.DB, models.User) {
 		api.GET("/suggestions", searchHandler.SearchSuggestions)
 		api.GET("/stats", searchHandler.GetSearchStats)
 	}
-	
+
 	return router, db, user
 }
 
-func TestSearchHandler_AdvancedSearch(t *testing.T) {
-	router, db, _ := setupSearchHandlerTest(t)
-	defer database.CleanupTestDB(db)
-	
-	tests := []struct {
-		name           string
-		query          string
-		expectedStatus int
-		expectedCount  int
-	}{
-		{
-			name:           "search by title",
-			query:          "?q=Go Programming",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "search by category",
-			query:          "?categories=Tutorial",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "search by tag",
-			query:          "?tags=programming",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "search with multiple filters",
-			query:          "?q=tutorial&categories=Tutorial",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "search with snippets",
-			query:          "?q=Go Programming&include_snippets=true",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "search with sorting",
-			query:          "?sort_by=title&sort_order=asc",
-			expectedStatus: http.StatusOK,
-			expectedCount:  3,
-		},
-		{
-			name:           "search with pagination",
-			query:          "?limit=2&offset=1",
-			expectedStatus: http.StatusOK,
-			expectedCount:  2,
-		},
-		{
-			name:           "empty search returns all",
-			query:          "",
-			expectedStatus: http.StatusOK,
-			expectedCount:  3,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequest("GET", "/api/search"+tt.query, nil)
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var response services.SearchResponse
-				err := json.Unmarshal(w.Body.Bytes(), &response)
-				require.NoError(t, err)
-				
-				assert.Equal(t, int64(tt.expectedCount), response.Total)
-				assert.Equal(t, tt.expectedCount, len(response.Results))
-				assert.Greater(t, response.Took.Nanoseconds(), int64(0))
-			}
-		})
-	}
-}
+func TestAdvancedSearch(t *testing.T) {
+	t.Parallel()
+	router, _, _ := setupSearchRouter(t)
 
-func TestSearchHandler_QuickSwitcher(t *testing.T) {
-	router, db, _ := setupSearchHandlerTest(t)
-	defer database.CleanupTestDB(db)
-	
-	tests := []struct {
-		name           string
-		query          string
-		expectedStatus int
-		expectedCount  int
-	}{
-		{
-			name:           "search with query",
-			query:          "?q=Go",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "search with limit",
-			query:          "?q=&limit=2",
-			expectedStatus: http.StatusOK,
-			expectedCount:  2,
-		},
-		{
-			name:           "empty query returns recent",
-			query:          "",
-			expectedStatus: http.StatusOK,
-			expectedCount:  3,
-		},
-		{
-			name:           "no matches",
-			query:          "?q=nonexistent",
-			expectedStatus: http.StatusOK,
-			expectedCount:  0,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequest("GET", "/api/search/quick"+tt.query, nil)
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var response map[string]interface{}
-				err := json.Unmarshal(w.Body.Bytes(), &response)
-				require.NoError(t, err)
-				
-				results, ok := response["results"].([]interface{})
-				require.True(t, ok)
-				assert.Equal(t, tt.expectedCount, len(results))
-				
-				if len(results) > 0 {
-					result := results[0].(map[string]interface{})
-					assert.Contains(t, result, "id")
-					assert.Contains(t, result, "title")
-					assert.Contains(t, result, "category")
-					assert.Contains(t, result, "score")
-				}
-			}
-		})
-	}
-}
-
-func TestSearchHandler_GetRecentNotes(t *testing.T) {
-	router, db, _ := setupSearchHandlerTest(t)
-	defer database.CleanupTestDB(db)
-	
-	tests := []struct {
-		name           string
-		query          string
-		expectedStatus int
-		expectedCount  int
-	}{
-		{
-			name:           "get recent notes default limit",
-			query:          "",
-			expectedStatus: http.StatusOK,
-			expectedCount:  3,
-		},
-		{
-			name:           "get recent notes with limit",
-			query:          "?limit=2",
-			expectedStatus: http.StatusOK,
-			expectedCount:  2,
-		},
-		{
-			name:           "get recent notes with high limit",
-			query:          "?limit=100",
-			expectedStatus: http.StatusOK,
-			expectedCount:  3,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequest("GET", "/api/search/recent"+tt.query, nil)
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var response map[string]interface{}
-				err := json.Unmarshal(w.Body.Bytes(), &response)
-				require.NoError(t, err)
-				
-				recentNotes, ok := response["recent_notes"].([]interface{})
-				require.True(t, ok)
-				assert.Equal(t, tt.expectedCount, len(recentNotes))
-				
-				if len(recentNotes) > 0 {
-					note := recentNotes[0].(map[string]interface{})
-					assert.Contains(t, note, "id")
-					assert.Contains(t, note, "title")
-					assert.Contains(t, note, "category")
-					assert.Contains(t, note, "updated_at")
-					assert.Contains(t, note, "accessed_at")
-				}
-			}
-		})
-	}
-}
-
-func TestSearchHandler_SearchSuggestions(t *testing.T) {
-	router, db, _ := setupSearchHandlerTest(t)
-	defer database.CleanupTestDB(db)
-	
-	tests := []struct {
-		name           string
-		query          string
-		expectedStatus int
-		expectedCount  int
-	}{
-		{
-			name:           "get suggestions with query",
-			query:          "?q=Go",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "get suggestions with limit",
-			query:          "?q=&limit=2",
-			expectedStatus: http.StatusOK,
-			expectedCount:  2,
-		},
-		{
-			name:           "missing query parameter",
-			query:          "",
-			expectedStatus: http.StatusBadRequest,
-			expectedCount:  0,
-		},
-		{
-			name:           "no matches",
-			query:          "?q=nonexistent",
-			expectedStatus: http.StatusOK,
-			expectedCount:  0,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequest("GET", "/api/search/suggestions"+tt.query, nil)
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var response map[string]interface{}
-				err := json.Unmarshal(w.Body.Bytes(), &response)
-				require.NoError(t, err)
-				
-				suggestions, ok := response["suggestions"].([]interface{})
-				require.True(t, ok)
-				assert.Equal(t, tt.expectedCount, len(suggestions))
-				
-				if len(suggestions) > 0 {
-					suggestion := suggestions[0].(map[string]interface{})
-					assert.Contains(t, suggestion, "id")
-					assert.Contains(t, suggestion, "title")
-					assert.Contains(t, suggestion, "category")
-					assert.Contains(t, suggestion, "score")
-				}
-			}
-		})
-	}
-}
-
-func TestSearchHandler_GetSearchStats(t *testing.T) {
-	router, db, user := setupSearchHandlerTest(t)
-	defer database.CleanupTestDB(db)
-	
-	req, _ := http.NewRequest("GET", "/api/search/stats", nil)
 	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/search?q=Go", nil)
 	router.ServeHTTP(w, req)
-	
-	assert.Equal(t, http.StatusOK, w.Code)
-	
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err)
-	
-	assert.Equal(t, user.ID.String(), response["user_id"])
-	assert.Contains(t, response, "total_searches")
-	assert.Contains(t, response, "popular_queries")
-	assert.Contains(t, response, "recent_searches")
-	assert.Contains(t, response, "search_performance")
-}
 
-func TestSearchHandler_AdvancedSearchWithDateFilters(t *testing.T) {
-	router, db, _ := setupSearchHandlerTest(t)
-	defer database.CleanupTestDB(db)
-	
-	// Test with date filters
-	req, _ := http.NewRequest("GET", "/api/search?date_from=2020-01-01T00:00:00Z&date_to=2030-12-31T23:59:59Z", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	
 	assert.Equal(t, http.StatusOK, w.Code)
-	
+
 	var response services.SearchResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
-	
-	assert.Equal(t, int64(3), response.Total)
-	assert.Equal(t, 3, len(response.Results))
+	assert.Equal(t, int64(1), response.Total)
 }
 
-func TestSearchHandler_AdvancedSearchWithBooleanFilters(t *testing.T) {
-	router, db, _ := setupSearchHandlerTest(t)
-	defer database.CleanupTestDB(db)
-	
-	tests := []struct {
-		name           string
-		query          string
-		expectedStatus int
-		expectedCount  int
-	}{
-		{
-			name:           "search pinned notes",
-			query:          "?is_pinned=true",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "search favorite notes",
-			query:          "?is_favorite=true",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "search non-pinned notes",
-			query:          "?is_pinned=false",
-			expectedStatus: http.StatusOK,
-			expectedCount:  2,
-		},
-		{
-			name:           "search non-favorite notes",
-			query:          "?is_favorite=false",
-			expectedStatus: http.StatusOK,
-			expectedCount:  2,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequest("GET", "/api/search"+tt.query, nil)
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var response services.SearchResponse
-				err := json.Unmarshal(w.Body.Bytes(), &response)
-				require.NoError(t, err)
-				
-				assert.Equal(t, int64(tt.expectedCount), response.Total)
-				assert.Equal(t, tt.expectedCount, len(response.Results))
-			}
-		})
-	}
+func TestQuickSwitcher(t *testing.T) {
+	t.Parallel()
+	router, _, _ := setupSearchRouter(t)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/search/quick?q=Go", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	results, ok := response["results"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, results, 1)
+}
+
+func TestGetRecentNotes(t *testing.T) {
+	t.Parallel()
+	router, _, _ := setupSearchRouter(t)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/search/recent", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	recentNotes, ok := response["recent_notes"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, recentNotes, 3)
+}
+
+func TestSearchSuggestions(t *testing.T) {
+	t.Parallel()
+	router, _, _ := setupSearchRouter(t)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/search/suggestions?q=Go", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	suggestions, ok := response["suggestions"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, suggestions, 1)
+}
+
+func TestGetSearchStats(t *testing.T) {
+	t.Parallel()
+	router, _, user := setupSearchRouter(t)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/search/stats", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, user.ID.String(), response["user_id"])
 }

@@ -9,74 +9,60 @@ import (
 	"time"
 
 	"notesage-server/internal/config"
+	"notesage-server/internal/database"
 	"notesage-server/internal/middleware"
 	"notesage-server/internal/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
-type AuthHandlerTestSuite struct {
-	suite.Suite
-	db      *gorm.DB
-	handler *AuthHandler
-	router  *gin.Engine
-	cfg     *config.Config
-}
+func setupAuthRouter(t *testing.T) (*gin.Engine, *AuthHandler) {
+	t.Helper()
 
-func (suite *AuthHandlerTestSuite) SetupTest() {
-	// Setup in-memory SQLite database
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	suite.Require().NoError(err)
-
-	// Auto-migrate
-	err = db.AutoMigrate(&models.User{})
-	suite.Require().NoError(err)
-
-	suite.db = db
-
-	// Setup config
-	suite.cfg = &config.Config{
+	db := database.SetupTestDB(t)
+	cfg := &config.Config{
 		Auth: config.AuthConfig{
 			JWTSecret:      "test-secret",
 			SessionTimeout: 24 * time.Hour,
 		},
 	}
 
-	// Setup handler and router
-	suite.handler = NewAuthHandler(db, suite.cfg)
+	handler := NewAuthHandler(db, cfg)
 	gin.SetMode(gin.TestMode)
-	suite.router = gin.New()
-	
+	router := gin.New()
+
 	// Public routes
-	suite.router.POST("/register", suite.handler.Register)
-	suite.router.POST("/login", suite.handler.Login)
-	
+	router.POST("/register", handler.Register)
+	router.POST("/login", handler.Login)
+
 	// Protected routes
-	protected := suite.router.Group("/")
-	protected.Use(middleware.AuthMiddleware(suite.cfg.Auth.JWTSecret))
+	protected := router.Group("/")
+	protected.Use(middleware.AuthMiddleware(cfg.Auth.JWTSecret))
 	{
-		protected.GET("/profile", suite.handler.GetProfile)
-		protected.PUT("/profile", suite.handler.UpdateProfile)
-		protected.POST("/change-password", suite.handler.ChangePassword)
-		
+		protected.GET("/profile", handler.GetProfile)
+		protected.PUT("/profile", handler.UpdateProfile)
+		protected.POST("/change-password", handler.ChangePassword)
+
 		// Admin routes
 		admin := protected.Group("/")
 		admin.Use(middleware.RequireAdmin())
 		{
-			admin.GET("/users", suite.handler.GetUsers)
-			admin.POST("/users", suite.handler.CreateUser)
-			admin.PUT("/users/:id", suite.handler.UpdateUser)
-			admin.DELETE("/users/:id", suite.handler.DeleteUser)
+			admin.GET("/users", handler.GetUsers)
+			admin.POST("/users", handler.CreateUser)
+			admin.PUT("/users/:id", handler.UpdateUser)
+			admin.DELETE("/users/:id", handler.DeleteUser)
 		}
 	}
+
+	return router, handler
 }
 
-func (suite *AuthHandlerTestSuite) TestRegister() {
+func TestRegister(t *testing.T) {
+	t.Parallel()
+	router, _ := setupAuthRouter(t)
+
 	reqBody := RegisterRequest{
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -88,22 +74,25 @@ func (suite *AuthHandlerTestSuite) TestRegister() {
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusCreated, w.Code)
+	assert.Equal(t, http.StatusCreated, w.Code)
 
 	var response AuthResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(suite.T(), err)
-	assert.NotEmpty(suite.T(), response.Token)
-	assert.Equal(suite.T(), "testuser", response.User.Username)
-	assert.Equal(suite.T(), "test@example.com", response.User.Email)
-	assert.Equal(suite.T(), models.RoleUser, response.User.Role)
-	assert.True(suite.T(), response.User.IsActive)
-	assert.NotZero(suite.T(), response.ExpiresAt)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, response.Token)
+	assert.Equal(t, "testuser", response.User.Username)
+	assert.Equal(t, "test@example.com", response.User.Email)
+	assert.Equal(t, models.RoleUser, response.User.Role)
+	assert.True(t, response.User.IsActive)
+	assert.NotZero(t, response.ExpiresAt)
 }
 
-func (suite *AuthHandlerTestSuite) TestRegisterDuplicateUser() {
+func TestRegisterDuplicateUser(t *testing.T) {
+	t.Parallel()
+	router, _ := setupAuthRouter(t)
+
 	// Register first user
 	reqBody := RegisterRequest{
 		Username: "testuser",
@@ -116,20 +105,23 @@ func (suite *AuthHandlerTestSuite) TestRegisterDuplicateUser() {
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
-	assert.Equal(suite.T(), http.StatusCreated, w.Code)
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusCreated, w.Code)
 
 	// Try to register same user again
 	jsonBody2, _ := json.Marshal(reqBody)
 	req2, _ := http.NewRequest("POST", "/register", bytes.NewBuffer(jsonBody2))
 	req2.Header.Set("Content-Type", "application/json")
-	
+
 	w2 := httptest.NewRecorder()
-	suite.router.ServeHTTP(w2, req2)
-	assert.Equal(suite.T(), http.StatusConflict, w2.Code)
+	router.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusConflict, w2.Code)
 }
 
-func (suite *AuthHandlerTestSuite) TestLogin() {
+func TestLogin(t *testing.T) {
+	t.Parallel()
+	router, _ := setupAuthRouter(t)
+
 	// First register a user
 	reqBody := RegisterRequest{
 		Username: "testuser",
@@ -142,8 +134,8 @@ func (suite *AuthHandlerTestSuite) TestLogin() {
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
-	assert.Equal(suite.T(), http.StatusCreated, w.Code)
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusCreated, w.Code)
 
 	// Now test login with username
 	loginReq := LoginRequest{
@@ -156,19 +148,22 @@ func (suite *AuthHandlerTestSuite) TestLogin() {
 	req.Header.Set("Content-Type", "application/json")
 
 	w = httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response AuthResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(suite.T(), err)
-	assert.NotEmpty(suite.T(), response.Token)
-	assert.Equal(suite.T(), "testuser", response.User.Username)
-	assert.NotNil(suite.T(), response.User.LastLogin)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, response.Token)
+	assert.Equal(t, "testuser", response.User.Username)
+	assert.NotNil(t, response.User.LastLogin)
 }
 
-func (suite *AuthHandlerTestSuite) TestLoginWithEmail() {
+func TestLoginWithEmail(t *testing.T) {
+	t.Parallel()
+	router, _ := setupAuthRouter(t)
+
 	// First register a user
 	reqBody := RegisterRequest{
 		Username: "testuser",
@@ -181,8 +176,8 @@ func (suite *AuthHandlerTestSuite) TestLoginWithEmail() {
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
-	assert.Equal(suite.T(), http.StatusCreated, w.Code)
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusCreated, w.Code)
 
 	// Now test login with email
 	loginReq := LoginRequest{
@@ -195,12 +190,15 @@ func (suite *AuthHandlerTestSuite) TestLoginWithEmail() {
 	req.Header.Set("Content-Type", "application/json")
 
 	w = httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func (suite *AuthHandlerTestSuite) TestLoginInvalidCredentials() {
+func TestLoginInvalidCredentials(t *testing.T) {
+	t.Parallel()
+	router, _ := setupAuthRouter(t)
+
 	loginReq := LoginRequest{
 		Username: "nonexistent",
 		Password: "wrongpassword",
@@ -211,35 +209,41 @@ func (suite *AuthHandlerTestSuite) TestLoginInvalidCredentials() {
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusUnauthorized, w.Code)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-func (suite *AuthHandlerTestSuite) TestGetProfile() {
+func TestGetProfile(t *testing.T) {
+	t.Parallel()
+	router, _ := setupAuthRouter(t)
+
 	// Create and login user
-	token := suite.createUserAndGetToken("testuser", "test@example.com", "password123")
+	token := createUserAndGetToken(t, router, "testuser", "test@example.com", "password123")
 
 	req, _ := http.NewRequest("GET", "/profile", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(suite.T(), err)
-	
+	assert.NoError(t, err)
+
 	user := response["user"].(map[string]interface{})
-	assert.Equal(suite.T(), "testuser", user["username"])
-	assert.Equal(suite.T(), "test@example.com", user["email"])
+	assert.Equal(t, "testuser", user["username"])
+	assert.Equal(t, "test@example.com", user["email"])
 }
 
-func (suite *AuthHandlerTestSuite) TestUpdateProfile() {
+func TestUpdateProfile(t *testing.T) {
+	t.Parallel()
+	router, _ := setupAuthRouter(t)
+
 	// Create and login user
-	token := suite.createUserAndGetToken("testuser", "test@example.com", "password123")
+	token := createUserAndGetToken(t, router, "testuser", "test@example.com", "password123")
 
 	updateReq := UpdateUserRequest{
 		Email: "newemail@example.com",
@@ -251,21 +255,24 @@ func (suite *AuthHandlerTestSuite) TestUpdateProfile() {
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(suite.T(), err)
-	
+	assert.NoError(t, err)
+
 	user := response["user"].(map[string]interface{})
-	assert.Equal(suite.T(), "newemail@example.com", user["email"])
+	assert.Equal(t, "newemail@example.com", user["email"])
 }
 
-func (suite *AuthHandlerTestSuite) TestChangePassword() {
+func TestChangePassword(t *testing.T) {
+	t.Parallel()
+	router, _ := setupAuthRouter(t)
+
 	// Create and login user
-	token := suite.createUserAndGetToken("testuser", "test@example.com", "password123")
+	token := createUserAndGetToken(t, router, "testuser", "test@example.com", "password123")
 
 	changeReq := ChangePasswordRequest{
 		CurrentPassword: "password123",
@@ -278,9 +285,9 @@ func (suite *AuthHandlerTestSuite) TestChangePassword() {
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	// Test login with new password
 	loginReq := LoginRequest{
@@ -293,14 +300,17 @@ func (suite *AuthHandlerTestSuite) TestChangePassword() {
 	req.Header.Set("Content-Type", "application/json")
 
 	w = httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func (suite *AuthHandlerTestSuite) TestAdminCreateUser() {
+func TestAdminCreateUser(t *testing.T) {
+	t.Parallel()
+	router, handler := setupAuthRouter(t)
+
 	// Create admin user
-	adminToken := suite.createAdminUserAndGetToken("admin", "admin@example.com", "password123")
+	adminToken := createAdminUserAndGetToken(t, handler, "admin", "admin@example.com", "password123")
 
 	createReq := CreateUserRequest{
 		Username: "newuser",
@@ -315,22 +325,25 @@ func (suite *AuthHandlerTestSuite) TestAdminCreateUser() {
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusCreated, w.Code)
+	assert.Equal(t, http.StatusCreated, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(suite.T(), err)
-	
+	assert.NoError(t, err)
+
 	user := response["user"].(map[string]interface{})
-	assert.Equal(suite.T(), "newuser", user["username"])
-	assert.Equal(suite.T(), "user", user["role"])
+	assert.Equal(t, "newuser", user["username"])
+	assert.Equal(t, "user", user["role"])
 }
 
-func (suite *AuthHandlerTestSuite) TestNonAdminCannotCreateUser() {
+func TestNonAdminCannotCreateUser(t *testing.T) {
+	t.Parallel()
+	router, _ := setupAuthRouter(t)
+
 	// Create regular user
-	userToken := suite.createUserAndGetToken("user", "user@example.com", "password123")
+	userToken := createUserAndGetToken(t, router, "user", "user@example.com", "password123")
 
 	createReq := CreateUserRequest{
 		Username: "newuser",
@@ -344,32 +357,36 @@ func (suite *AuthHandlerTestSuite) TestNonAdminCannotCreateUser() {
 	req.Header.Set("Authorization", "Bearer "+userToken)
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusForbidden, w.Code)
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
-func (suite *AuthHandlerTestSuite) TestGetUsers() {
+func TestGetUsers(t *testing.T) {
+	t.Parallel()
+	router, handler := setupAuthRouter(t)
+
 	// Create admin user
-	adminToken := suite.createAdminUserAndGetToken("admin", "admin@example.com", "password123")
+	adminToken := createAdminUserAndGetToken(t, handler, "admin", "admin@example.com", "password123")
 
 	req, _ := http.NewRequest("GET", "/users", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
-	assert.Equal(suite.T(), http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response UserListResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(suite.T(), err)
-	assert.Equal(suite.T(), int64(1), response.Total)
-	assert.Len(suite.T(), response.Users, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), response.Total)
+	assert.Len(t, response.Users, 1)
 }
 
 // Helper methods
-func (suite *AuthHandlerTestSuite) createUserAndGetToken(username, email, password string) string {
+func createUserAndGetToken(t *testing.T, router *gin.Engine, username, email, password string) string {
+	t.Helper()
 	reqBody := RegisterRequest{
 		Username: username,
 		Email:    email,
@@ -381,14 +398,16 @@ func (suite *AuthHandlerTestSuite) createUserAndGetToken(username, email, passwo
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	suite.router.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
 	var response AuthResponse
-	json.Unmarshal(w.Body.Bytes(), &response)
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
 	return response.Token
 }
 
-func (suite *AuthHandlerTestSuite) createAdminUserAndGetToken(username, email, password string) string {
+func createAdminUserAndGetToken(t *testing.T, handler *AuthHandler, username, email, password string) string {
+	t.Helper()
 	// Create admin user directly in database
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	user := models.User{
@@ -398,13 +417,9 @@ func (suite *AuthHandlerTestSuite) createAdminUserAndGetToken(username, email, p
 		Role:     models.RoleAdmin,
 		IsActive: true,
 	}
-	suite.db.Create(&user)
+	handler.db.Create(&user)
 
 	// Generate token
-	token, _, _ := suite.handler.generateToken(user)
+	token, _, _ := handler.generateToken(user)
 	return token
-}
-
-func TestAuthHandlerSuite(t *testing.T) {
-	suite.Run(t, new(AuthHandlerTestSuite))
 }

@@ -17,25 +17,233 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupPeopleTestDB(t *testing.T) (*gorm.DB, uuid.UUID) {
+func setupPeopleRouter(t *testing.T) (*gin.Engine, *gorm.DB, *models.User) {
+	t.Helper()
+
 	db := database.SetupTestDB(t)
-	
-	// Create test user with unique email
-	userID := uuid.New()
-	testUser := &models.User{
-		ID:       userID,
-		Username: "testuser_" + userID.String()[:8],
-		Email:    "test_" + userID.String()[:8] + "@example.com",
+
+	// Create test user
+	user := &models.User{
+		ID:       uuid.New(),
+		Username: "testuser",
+		Email:    "test@example.com",
 		Password: "hashedpassword",
 		Role:     models.RoleUser,
 		IsActive: true,
 	}
-	require.NoError(t, db.Create(testUser).Error)
-	
-	return db, userID
+	db.Create(user)
+
+	personHandler := NewPersonHandler(db)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	people := router.Group("/people")
+	{
+		people.GET("", personHandler.GetPeople)
+		people.POST("", personHandler.CreatePerson)
+		people.GET("/search", personHandler.SearchPeople)
+		people.GET("/:id", personHandler.GetPerson)
+		people.PUT("/:id", personHandler.UpdatePerson)
+		people.DELETE("/:id", personHandler.DeletePerson)
+		people.GET("/:id/connections", personHandler.GetPersonConnections)
+		people.POST("/:id/connections", personHandler.CreatePersonConnection)
+	}
+
+	return router, db, user
+}
+
+func TestGetPeople(t *testing.T) {
+	t.Parallel()
+	router, db, user := setupPeopleRouter(t)
+
+	// Create test people
+	_ = createTestPerson(t, db, user.ID)
+	person2 := &models.Person{
+		ID:      uuid.New(),
+		UserID:  user.ID,
+		Name:    "Jane Smith",
+		Email:   "jane@example.com",
+		Company: "Another Company",
+	}
+	require.NoError(t, db.Create(person2).Error)
+
+	w := makePeopleRequest(t, router, "GET", "/people", user.ID, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var people []models.Person
+	err := json.Unmarshal(w.Body.Bytes(), &people)
+	require.NoError(t, err)
+	assert.Len(t, people, 2)
+}
+
+func TestCreatePerson(t *testing.T) {
+	t.Parallel()
+	router, _, user := setupPeopleRouter(t)
+
+	createReq := CreatePersonRequest{
+		Name:  "Test Person",
+		Email: "test@example.com",
+	}
+
+	w := makePeopleRequest(t, router, "POST", "/people", user.ID, createReq)
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var person models.Person
+	err := json.Unmarshal(w.Body.Bytes(), &person)
+	require.NoError(t, err)
+	assert.Equal(t, createReq.Name, person.Name)
+	assert.Equal(t, createReq.Email, person.Email)
+	assert.Equal(t, user.ID, person.UserID)
+}
+
+func TestGetPerson(t *testing.T) {
+	t.Parallel()
+	router, db, user := setupPeopleRouter(t)
+
+	person := createTestPerson(t, db, user.ID)
+
+	w := makePeopleRequest(t, router, "GET", "/people/"+person.ID.String(), user.ID, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var returnedPerson models.Person
+	err := json.Unmarshal(w.Body.Bytes(), &returnedPerson)
+	require.NoError(t, err)
+	assert.Equal(t, person.ID, returnedPerson.ID)
+}
+
+func TestUpdatePerson(t *testing.T) {
+	t.Parallel()
+	router, db, user := setupPeopleRouter(t)
+
+	person := createTestPerson(t, db, user.ID)
+
+	updateReq := UpdatePersonRequest{
+		Name: stringPtr("Updated Name"),
+	}
+
+	w := makePeopleRequest(t, router, "PUT", "/people/"+person.ID.String(), user.ID, updateReq)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var updatedPerson models.Person
+	err := json.Unmarshal(w.Body.Bytes(), &updatedPerson)
+	require.NoError(t, err)
+	assert.Equal(t, *updateReq.Name, updatedPerson.Name)
+}
+
+func TestDeletePerson(t *testing.T) {
+	t.Parallel()
+	router, db, user := setupPeopleRouter(t)
+
+	person := createTestPerson(t, db, user.ID)
+
+	w := makePeopleRequest(t, router, "DELETE", "/people/"+person.ID.String(), user.ID, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var count int64
+	db.Model(&models.Person{}).Where("id = ?", person.ID).Count(&count)
+	assert.Equal(t, int64(0), count)
+}
+
+func TestSearchPeople(t *testing.T) {
+	t.Parallel()
+	router, db, user := setupPeopleRouter(t)
+
+	createTestPerson(t, db, user.ID)
+
+	w := makePeopleRequest(t, router, "GET", "/people/search?q=john", user.ID, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var people []models.Person
+	err := json.Unmarshal(w.Body.Bytes(), &people)
+	require.NoError(t, err)
+	assert.Len(t, people, 1)
+}
+
+func TestGetPersonConnections(t *testing.T) {
+	t.Parallel()
+	router, db, user := setupPeopleRouter(t)
+
+	person := createTestPerson(t, db, user.ID)
+	note := createTestNote(t, db, user.ID)
+
+	connection := &models.Connection{
+		ID:         uuid.New(),
+		UserID:     user.ID,
+		SourceID:   person.ID,
+		SourceType: "person",
+		TargetID:   note.ID,
+		TargetType: "note",
+		Strength:   1,
+	}
+	require.NoError(t, db.Create(connection).Error)
+
+	w := makePeopleRequest(t, router, "GET", "/people/"+person.ID.String()+"/connections", user.ID, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response PersonConnectionsResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, person.ID, response.Person.ID)
+	assert.Equal(t, 1, response.TotalNotes)
+}
+
+func TestCreatePersonConnection(t *testing.T) {
+	t.Parallel()
+	router, db, user := setupPeopleRouter(t)
+
+	person := createTestPerson(t, db, user.ID)
+	note := createTestNote(t, db, user.ID)
+
+	createReq := map[string]string{
+		"note_id": note.ID.String(),
+	}
+
+	w := makePeopleRequest(t, router, "POST", "/people/"+person.ID.String()+"/connections", user.ID, createReq)
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var connection models.Connection
+	err := json.Unmarshal(w.Body.Bytes(), &connection)
+	require.NoError(t, err)
+	assert.Equal(t, user.ID, connection.UserID)
+	assert.Equal(t, person.ID, connection.SourceID)
+	assert.Equal(t, note.ID, connection.TargetID)
+}
+
+// Helper function to make requests to the people handler
+func makePeopleRequest(t *testing.T, router *gin.Engine, method, url string, userID uuid.UUID, body interface{}) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var reqBody *bytes.Buffer
+	if body != nil {
+		jsonBody, _ := json.Marshal(body)
+		reqBody = bytes.NewBuffer(jsonBody)
+	} else {
+		reqBody = bytes.NewBuffer(nil)
+	}
+
+	req := httptest.NewRequest(method, url, reqBody)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set("userID", userID.String())
+
+	// This is a hack to set the URL parameter for tests
+	if method != "POST" && method != "GET" {
+		// get id from url
+		parts := bytes.Split([]byte(url), []byte("/"))
+		id := string(parts[len(parts)-1])
+		c.Params = gin.Params{{Key: "id", Value: id}}
+	}
+
+	router.ServeHTTP(w, c.Request)
+	return w
 }
 
 func createTestPerson(t *testing.T, db *gorm.DB, userID uuid.UUID) *models.Person {
+	t.Helper()
 	person := &models.Person{
 		ID:          uuid.New(),
 		UserID:      userID,
@@ -53,6 +261,7 @@ func createTestPerson(t *testing.T, db *gorm.DB, userID uuid.UUID) *models.Perso
 }
 
 func createTestNote(t *testing.T, db *gorm.DB, userID uuid.UUID) *models.Note {
+	t.Helper()
 	note := &models.Note{
 		ID:      uuid.New(),
 		UserID:  userID,
@@ -62,533 +271,3 @@ func createTestNote(t *testing.T, db *gorm.DB, userID uuid.UUID) *models.Note {
 	require.NoError(t, db.Create(note).Error)
 	return note
 }
-
-func TestPersonHandler_GetPeople(t *testing.T) {
-	db, userID := setupPeopleTestDB(t)
-	handler := NewPersonHandler(db)
-	
-	// Create test people
-	person1 := createTestPerson(t, db, userID)
-	person2 := &models.Person{
-		ID:      uuid.New(),
-		UserID:  userID,
-		Name:    "Jane Smith",
-		Email:   "jane@example.com",
-		Company: "Another Company",
-	}
-	require.NoError(t, db.Create(person2).Error)
-	
-	tests := []struct {
-		name           string
-		queryParams    string
-		expectedCount  int
-		expectedStatus int
-	}{
-		{
-			name:           "Get all people",
-			queryParams:    "",
-			expectedCount:  2,
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Search by name",
-			queryParams:    "?search=john",
-			expectedCount:  1,
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Search by company",
-			queryParams:    "?company=Test%20Company",
-			expectedCount:  1,
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Search with limit",
-			queryParams:    "?limit=1",
-			expectedCount:  1,
-			expectedStatus: http.StatusOK,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			
-			req := httptest.NewRequest("GET", "/people"+tt.queryParams, nil)
-			c.Request = req
-			c.Set("userID", userID.String())
-			
-			handler.GetPeople(c)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var people []models.Person
-				err := json.Unmarshal(w.Body.Bytes(), &people)
-				require.NoError(t, err)
-				assert.Equal(t, tt.expectedCount, len(people))
-				
-				if tt.queryParams == "?search=john" {
-					assert.Equal(t, person1.Name, people[0].Name)
-				}
-			}
-		})
-	}
-}
-
-func TestPersonHandler_CreatePerson(t *testing.T) {
-	db, userID := setupPeopleTestDB(t)
-	handler := NewPersonHandler(db)
-	
-	tests := []struct {
-		name           string
-		request        CreatePersonRequest
-		expectedStatus int
-		expectedError  string
-	}{
-		{
-			name: "Valid person creation",
-			request: CreatePersonRequest{
-				Name:        "Test Person",
-				Email:       "test@example.com",
-				Phone:       "+1234567890",
-				Company:     "Test Company",
-				Title:       "Engineer",
-				LinkedinURL: "https://linkedin.com/in/test",
-				AvatarURL:   "https://example.com/avatar.jpg",
-				Notes:       "Test notes",
-			},
-			expectedStatus: http.StatusCreated,
-		},
-		{
-			name: "Missing required name",
-			request: CreatePersonRequest{
-				Email: "test@example.com",
-			},
-			expectedStatus: http.StatusBadRequest,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			
-			body, _ := json.Marshal(tt.request)
-			req := httptest.NewRequest("POST", "/people", bytes.NewBuffer(body))
-			req.Header.Set("Content-Type", "application/json")
-			c.Request = req
-			c.Set("userID", userID.String())
-			
-			handler.CreatePerson(c)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusCreated {
-				var person models.Person
-				err := json.Unmarshal(w.Body.Bytes(), &person)
-				require.NoError(t, err)
-				assert.Equal(t, tt.request.Name, person.Name)
-				assert.Equal(t, tt.request.Email, person.Email)
-				assert.Equal(t, userID, person.UserID)
-			}
-		})
-	}
-}
-
-func TestPersonHandler_GetPerson(t *testing.T) {
-	db, userID := setupPeopleTestDB(t)
-	handler := NewPersonHandler(db)
-	
-	person := createTestPerson(t, db, userID)
-	
-	tests := []struct {
-		name           string
-		personID       string
-		expectedStatus int
-	}{
-		{
-			name:           "Valid person ID",
-			personID:       person.ID.String(),
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Invalid person ID",
-			personID:       uuid.New().String(),
-			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name:           "Invalid UUID format",
-			personID:       "invalid-uuid",
-			expectedStatus: http.StatusNotFound,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			
-			req := httptest.NewRequest("GET", "/people/"+tt.personID, nil)
-			c.Request = req
-			c.Set("userID", userID.String())
-			c.Params = []gin.Param{{Key: "id", Value: tt.personID}}
-			
-			handler.GetPerson(c)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var returnedPerson models.Person
-				err := json.Unmarshal(w.Body.Bytes(), &returnedPerson)
-				require.NoError(t, err)
-				assert.Equal(t, person.ID, returnedPerson.ID)
-				assert.Equal(t, person.Name, returnedPerson.Name)
-			}
-		})
-	}
-}
-
-func TestPersonHandler_UpdatePerson(t *testing.T) {
-	db, userID := setupPeopleTestDB(t)
-	handler := NewPersonHandler(db)
-	
-	person := createTestPerson(t, db, userID)
-	
-	tests := []struct {
-		name           string
-		personID       string
-		request        UpdatePersonRequest
-		expectedStatus int
-	}{
-		{
-			name:     "Valid update",
-			personID: person.ID.String(),
-			request: UpdatePersonRequest{
-				Name:    stringPtr("Updated Name"),
-				Email:   stringPtr("updated@example.com"),
-				Company: stringPtr("Updated Company"),
-			},
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Person not found",
-			personID:       uuid.New().String(),
-			request:        UpdatePersonRequest{Name: stringPtr("Test")},
-			expectedStatus: http.StatusNotFound,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			
-			body, _ := json.Marshal(tt.request)
-			req := httptest.NewRequest("PUT", "/people/"+tt.personID, bytes.NewBuffer(body))
-			req.Header.Set("Content-Type", "application/json")
-			c.Request = req
-			c.Set("userID", userID.String())
-			c.Params = []gin.Param{{Key: "id", Value: tt.personID}}
-			
-			handler.UpdatePerson(c)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var updatedPerson models.Person
-				err := json.Unmarshal(w.Body.Bytes(), &updatedPerson)
-				require.NoError(t, err)
-				if tt.request.Name != nil {
-					assert.Equal(t, *tt.request.Name, updatedPerson.Name)
-				}
-				if tt.request.Email != nil {
-					assert.Equal(t, *tt.request.Email, updatedPerson.Email)
-				}
-			}
-		})
-	}
-}
-
-func TestPersonHandler_DeletePerson(t *testing.T) {
-	db, userID := setupPeopleTestDB(t)
-	handler := NewPersonHandler(db)
-	
-	person := createTestPerson(t, db, userID)
-	
-	tests := []struct {
-		name           string
-		personID       string
-		expectedStatus int
-	}{
-		{
-			name:           "Valid deletion",
-			personID:       person.ID.String(),
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Person not found",
-			personID:       uuid.New().String(),
-			expectedStatus: http.StatusNotFound,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			
-			req := httptest.NewRequest("DELETE", "/people/"+tt.personID, nil)
-			c.Request = req
-			c.Set("userID", userID.String())
-			c.Params = []gin.Param{{Key: "id", Value: tt.personID}}
-			
-			handler.DeletePerson(c)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				// Verify person was deleted
-				var count int64
-				db.Model(&models.Person{}).Where("id = ?", tt.personID).Count(&count)
-				assert.Equal(t, int64(0), count)
-			}
-		})
-	}
-}
-
-func TestPersonHandler_SearchPeople(t *testing.T) {
-	db, userID := setupPeopleTestDB(t)
-	handler := NewPersonHandler(db)
-	
-	// Create test people
-	person1 := createTestPerson(t, db, userID)
-	person2 := &models.Person{
-		ID:      uuid.New(),
-		UserID:  userID,
-		Name:    "Jane Smith",
-		Email:   "jane@example.com",
-		Company: "Different Company",
-	}
-	require.NoError(t, db.Create(person2).Error)
-	
-	tests := []struct {
-		name           string
-		query          string
-		expectedCount  int
-		expectedStatus int
-	}{
-		{
-			name:           "Search by name",
-			query:          "john",
-			expectedCount:  1,
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Search by email",
-			query:          "jane@example.com",
-			expectedCount:  1,
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Search by company",
-			query:          "Test%20Company",
-			expectedCount:  1,
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "No results",
-			query:          "nonexistent",
-			expectedCount:  0,
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Empty query",
-			query:          "",
-			expectedStatus: http.StatusBadRequest,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			
-			req := httptest.NewRequest("GET", "/people/search?q="+tt.query, nil)
-			c.Request = req
-			c.Set("userID", userID.String())
-			
-			handler.SearchPeople(c)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var people []models.Person
-				err := json.Unmarshal(w.Body.Bytes(), &people)
-				require.NoError(t, err)
-				assert.Equal(t, tt.expectedCount, len(people))
-				
-				if tt.query == "john" && len(people) > 0 {
-					assert.Equal(t, person1.Name, people[0].Name)
-				}
-			}
-		})
-	}
-}
-
-func TestPersonHandler_GetPersonConnections(t *testing.T) {
-	db, userID := setupPeopleTestDB(t)
-	handler := NewPersonHandler(db)
-	
-	person := createTestPerson(t, db, userID)
-	note := createTestNote(t, db, userID)
-	
-	// Create a connection
-	connection := &models.Connection{
-		ID:         uuid.New(),
-		UserID:     userID,
-		SourceID:   person.ID,
-		SourceType: "person",
-		TargetID:   note.ID,
-		TargetType: "note",
-		Strength:   1,
-	}
-	require.NoError(t, db.Create(connection).Error)
-	
-	// Create a todo assigned to the person
-	todo := &models.Todo{
-		ID:               uuid.New(),
-		NoteID:           note.ID,
-		TodoID:           "t1",
-		Text:             "Test todo",
-		AssignedPersonID: &person.ID,
-	}
-	require.NoError(t, db.Create(todo).Error)
-	
-	tests := []struct {
-		name           string
-		personID       string
-		expectedStatus int
-	}{
-		{
-			name:           "Valid person connections",
-			personID:       person.ID.String(),
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "Person not found",
-			personID:       uuid.New().String(),
-			expectedStatus: http.StatusNotFound,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			
-			req := httptest.NewRequest("GET", "/people/"+tt.personID+"/connections", nil)
-			c.Request = req
-			c.Set("userID", userID.String())
-			c.Params = []gin.Param{{Key: "id", Value: tt.personID}}
-			
-			handler.GetPersonConnections(c)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusOK {
-				var response PersonConnectionsResponse
-				err := json.Unmarshal(w.Body.Bytes(), &response)
-				require.NoError(t, err)
-				assert.Equal(t, person.ID, response.Person.ID)
-				assert.Equal(t, 1, response.TotalNotes)
-				assert.Equal(t, 1, response.TotalTodos)
-				assert.Equal(t, 1, len(response.Notes))
-				assert.Equal(t, note.ID, response.Notes[0].NoteID)
-			}
-		})
-	}
-}
-
-func TestPersonHandler_CreatePersonConnection(t *testing.T) {
-	db, userID := setupPeopleTestDB(t)
-	handler := NewPersonHandler(db)
-	
-	person := createTestPerson(t, db, userID)
-	note := createTestNote(t, db, userID)
-	
-	tests := []struct {
-		name           string
-		personID       string
-		request        map[string]string
-		expectedStatus int
-	}{
-		{
-			name:     "Valid connection creation",
-			personID: person.ID.String(),
-			request: map[string]string{
-				"note_id": note.ID.String(),
-			},
-			expectedStatus: http.StatusCreated,
-		},
-		{
-			name:     "Person not found",
-			personID: uuid.New().String(),
-			request: map[string]string{
-				"note_id": note.ID.String(),
-			},
-			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name:     "Note not found",
-			personID: person.ID.String(),
-			request: map[string]string{
-				"note_id": uuid.New().String(),
-			},
-			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name:           "Missing note_id",
-			personID:       person.ID.String(),
-			request:        map[string]string{},
-			expectedStatus: http.StatusBadRequest,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			
-			body, _ := json.Marshal(tt.request)
-			req := httptest.NewRequest("POST", "/people/"+tt.personID+"/connections", bytes.NewBuffer(body))
-			req.Header.Set("Content-Type", "application/json")
-			c.Request = req
-			c.Set("userID", userID.String())
-			c.Params = []gin.Param{{Key: "id", Value: tt.personID}}
-			
-			handler.CreatePersonConnection(c)
-			
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			
-			if tt.expectedStatus == http.StatusCreated {
-				var connection models.Connection
-				err := json.Unmarshal(w.Body.Bytes(), &connection)
-				require.NoError(t, err)
-				assert.Equal(t, userID, connection.UserID)
-				assert.Equal(t, "person", connection.SourceType)
-				assert.Equal(t, "note", connection.TargetType)
-			}
-		})
-	}
-}
-

@@ -416,27 +416,52 @@ func (s *ConnectionService) detectPersonMentions(userID uuid.UUID, content strin
 		}
 	}
 	
-	// Regex to find @mentions - match @word or @"phrase with spaces"
-	mentionRegex := regexp.MustCompile(`@([a-zA-Z][a-zA-Z0-9_\-]*(?:\s+[a-zA-Z][a-zA-Z0-9_\-]*)*)\b`)
-	matches := mentionRegex.FindAllStringSubmatchIndex(content, -1)
+	// Find all @mentions using a simple regex
+	mentionRegex := regexp.MustCompile(`@[a-zA-Z][a-zA-Z\s]*`)
+	allMatches := mentionRegex.FindAllStringIndex(content, -1)
 	
-	for _, match := range matches {
-		if len(match) >= 4 {
-			mentionText := strings.TrimSpace(content[match[2]:match[3]])
-			mentionTextLower := strings.ToLower(mentionText)
-			
-			if personID, exists := nameToID[mentionTextLower]; exists {
-				// Extract context (20 characters before and after)
-				contextStart := max(0, match[0]-20)
-				contextEnd := min(len(content), match[1]+20)
-				context := content[contextStart:contextEnd]
-				
-				mentions = append(mentions, PersonMention{
-					PersonID: personID,
-					Context:  context,
-					Position: match[0],
-				})
+	for _, match := range allMatches {
+		fullMatch := content[match[0]:match[1]]
+		// Remove the @ and trim spaces
+		mentionText := strings.TrimSpace(fullMatch[1:])
+		
+		// Try to find the longest matching name
+		var bestMatch string
+		var bestPersonID uuid.UUID
+		
+		// Check full name first
+		mentionTextLower := strings.ToLower(mentionText)
+		if personID, exists := nameToID[mentionTextLower]; exists {
+			bestMatch = mentionText
+			bestPersonID = personID
+		} else {
+			// Try progressively shorter matches (for cases like "@John Smith was")
+			words := strings.Fields(mentionText)
+			for i := len(words); i > 0; i-- {
+				candidate := strings.Join(words[:i], " ")
+				candidateLower := strings.ToLower(candidate)
+				if personID, exists := nameToID[candidateLower]; exists {
+					bestMatch = candidate
+					bestPersonID = personID
+					break
+				}
 			}
+		}
+		
+		if bestMatch != "" {
+			// Extract context (20 characters before and after)
+			contextStart := max(0, match[0]-20)
+			contextEnd := min(len(content), match[0]+len("@"+bestMatch)+20)
+			if contextEnd > len(content) {
+				contextEnd = len(content)
+			}
+			context := content[contextStart:contextEnd]
+			
+			mentions = append(mentions, PersonMention{
+				PersonID: bestPersonID,
+				Context:  context,
+				Position: match[0],
+			})
 		}
 	}
 	
@@ -458,31 +483,65 @@ func (s *ConnectionService) detectNoteReferences(userID uuid.UUID, content strin
 		titleToID[strings.ToLower(note.Title)] = note.ID
 	}
 	
-	// Regex to find #references - match #word or #"phrase with spaces"
-	referenceRegex := regexp.MustCompile(`#([a-zA-Z][a-zA-Z0-9_\-]*(?:\s+[a-zA-Z][a-zA-Z0-9_\-]*)*)\b`)
-	matches := referenceRegex.FindAllStringSubmatchIndex(content, -1)
+	// Find all #references using a non-greedy match
+	referenceRegex := regexp.MustCompile(`#([a-zA-Z]+(?:\s+[a-zA-Z]+)*?)(?:\s|$|[^a-zA-Z])`)
+	allMatches := referenceRegex.FindAllStringSubmatchIndex(content, -1)
 	
-	for _, match := range matches {
-		if len(match) >= 4 {
-			referenceText := strings.TrimSpace(content[match[2]:match[3]])
-			referenceTextLower := strings.ToLower(referenceText)
-			
-			// Find the best matching note title
-			for title, noteID := range titleToID {
-				if strings.Contains(title, referenceTextLower) || strings.Contains(referenceTextLower, title) {
-					// Extract context (20 characters before and after)
-					contextStart := max(0, match[0]-20)
-					contextEnd := min(len(content), match[1]+20)
-					context := content[contextStart:contextEnd]
-					
-					references = append(references, NoteReference{
-						NoteID:   noteID,
-						Context:  context,
-						Position: match[0],
-					})
+	for _, match := range allMatches {
+		if len(match) < 4 {
+			continue
+		}
+		// Extract the captured group (without the #)
+		referenceText := strings.TrimSpace(content[match[2]:match[3]])
+		
+		// Try to find the longest matching title
+		var bestMatch string
+		var bestNoteID uuid.UUID
+		
+		// Check exact title match first
+		referenceTextLower := strings.ToLower(referenceText)
+		if noteID, exists := titleToID[referenceTextLower]; exists {
+			bestMatch = referenceText
+			bestNoteID = noteID
+		} else {
+			// Try progressively shorter matches (for cases like "#Meeting Notes from")
+			words := strings.Fields(referenceText)
+			for i := len(words); i > 0; i-- {
+				candidate := strings.Join(words[:i], " ")
+				candidateLower := strings.ToLower(candidate)
+				if noteID, exists := titleToID[candidateLower]; exists {
+					bestMatch = candidate
+					bestNoteID = noteID
 					break
 				}
 			}
+			
+			// If no exact match found, try partial matching
+			if bestMatch == "" {
+				for title, noteID := range titleToID {
+					if strings.Contains(title, referenceTextLower) {
+						bestMatch = referenceText
+						bestNoteID = noteID
+						break
+					}
+				}
+			}
+		}
+		
+		if bestMatch != "" {
+			// Extract context (20 characters before and after)
+			contextStart := max(0, match[0]-20)
+			contextEnd := min(len(content), match[1]+20)
+			if contextEnd > len(content) {
+				contextEnd = len(content)
+			}
+			context := content[contextStart:contextEnd]
+			
+			references = append(references, NoteReference{
+				NoteID:   bestNoteID,
+				Context:  context,
+				Position: match[0],
+			})
 		}
 	}
 	

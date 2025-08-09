@@ -170,8 +170,8 @@ func TestConnectionService_DetectConnections(t *testing.T) {
 					},
 				},
 			},
-			expectedCount: 2, // Only expect mentions to work reliably in this test
-			expectedTypes: []ConnectionType{ConnectionTypeMention, ConnectionTypeMention},
+			expectedCount: 3, // Two mentions and one note reference
+			expectedTypes: []ConnectionType{ConnectionTypeMention, ConnectionTypeMention, ConnectionTypeReference},
 		},
 		{
 			name: "no connections",

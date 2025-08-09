@@ -276,23 +276,20 @@ func runMigrateForce(cmd *cobra.Command, args []string) error {
 
 func setupMigrator(cmd *cobra.Command) (*migrations.Migrator, error) {
 	// Load configuration
-	configPath, _ := cmd.Flags().GetString("config")
-	if configPath == "" {
-		configPath = "/etc/notesage/config.yaml"
-	}
-
-	cfg, err := config.Load(configPath)
+	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Connect to database
-	db, err := database.Connect(cfg)
+	db, err := database.Initialize(cfg.Database)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Create migrator with custom logger if verbose
+	// Create migrator
+	migrator := migrations.NewMigrator(db)
+	return migrator, nil
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	if verbose {
 		logger := &VerboseLogger{}

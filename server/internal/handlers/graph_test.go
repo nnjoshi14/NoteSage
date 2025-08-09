@@ -390,15 +390,22 @@ func TestGraphHandler_DetectConnections(t *testing.T) {
 				assert.Contains(t, response, "connections")
 				assert.Contains(t, response, "total")
 				
-				connections := response["connections"].([]interface{})
+				connectionsRaw, exists := response["connections"]
+				require.True(t, exists, "connections field should exist")
+				require.NotNil(t, connectionsRaw, "connections should not be nil")
+				
+				connections, ok := connectionsRaw.([]interface{})
+				require.True(t, ok, "connections should be a slice")
 				assert.GreaterOrEqual(t, len(connections), 1)
 				
 				// Verify connection structure
-				connection := connections[0].(map[string]interface{})
-				assert.Contains(t, connection, "source_id")
-				assert.Contains(t, connection, "target_id")
-				assert.Contains(t, connection, "type")
-				assert.Equal(t, "mention", connection["type"])
+				if len(connections) > 0 {
+					connection := connections[0].(map[string]interface{})
+					assert.Contains(t, connection, "source_id")
+					assert.Contains(t, connection, "target_id")
+					assert.Contains(t, connection, "type")
+					assert.Equal(t, "mention", connection["type"])
+				}
 			},
 		},
 		{

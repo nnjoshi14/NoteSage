@@ -14,7 +14,7 @@ import (
 // SetupTestDB creates a unique, in-memory test database for each test.
 func SetupTestDB(t *testing.T) *gorm.DB {
 	// Create a unique database name for each test to ensure isolation.
-	dbName := fmt.Sprintf("file:testdb_%s?mode=memory&cache=shared", uuid.New().String())
+	dbName := fmt.Sprintf("testdb_%s", uuid.New().String())
 
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",

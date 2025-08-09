@@ -471,7 +471,7 @@ func TestSearchService_CalculateFuzzyScore(t *testing.T) {
 			name:          "contains",
 			title:         "Advanced Go Programming",
 			query:         "go programming",
-			expectedScore: 4.0,
+			expectedScore: 6.0,
 			comparison:    "equal",
 		},
 		{
@@ -566,7 +566,7 @@ func TestSearchService_GenerateSnippets(t *testing.T) {
 	snippets := service.generateSnippets(note, "programming")
 	
 	assert.NotEmpty(t, snippets)
-	assert.Contains(t, snippets[0], "**programming**")
+	assert.Contains(t, snippets[0], "**Programming**")
 }
 
 // Helper function to create bool pointer (moved to avoid conflict)

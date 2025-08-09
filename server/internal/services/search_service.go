@@ -344,13 +344,16 @@ func (s *SearchService) calculateRelevanceScore(note models.Note, query string) 
 	title := strings.ToLower(note.Title)
 	
 	score := 0.0
+	hasMatch := false
 
 	// Title exact match gets highest score
 	if title == query {
 		score += 10.0
+		hasMatch = true
 	} else if strings.Contains(title, query) {
 		// Title contains query
 		score += 5.0
+		hasMatch = true
 		// Bonus for query at start of title
 		if strings.HasPrefix(title, query) {
 			score += 2.0
@@ -362,35 +365,42 @@ func (s *SearchService) calculateRelevanceScore(note models.Note, query string) 
 		contentStr := strings.ToLower(fmt.Sprintf("%v", note.Content))
 		if strings.Contains(contentStr, query) {
 			score += 1.0
+			hasMatch = true
 		}
 	}
 
 	// Category match
 	if strings.ToLower(note.Category) == query {
 		score += 3.0
+		hasMatch = true
 	}
 
 	// Tag match
 	for _, tag := range note.Tags {
 		if strings.ToLower(tag) == query {
 			score += 2.0
+			hasMatch = true
 		} else if strings.Contains(strings.ToLower(tag), query) {
 			score += 1.0
+			hasMatch = true
 		}
 	}
 
-	// Recency bonus (newer notes get slight boost)
-	daysSinceUpdate := time.Since(note.UpdatedAt).Hours() / 24
-	if daysSinceUpdate < 7 {
-		score += 0.5
-	}
+	// Only apply bonuses if there's an actual match
+	if hasMatch {
+		// Recency bonus (newer notes get slight boost)
+		daysSinceUpdate := time.Since(note.UpdatedAt).Hours() / 24
+		if daysSinceUpdate < 7 {
+			score += 0.5
+		}
 
-	// Pinned and favorite bonuses
-	if note.IsPinned {
-		score += 1.0
-	}
-	if note.IsFavorite {
-		score += 0.5
+		// Pinned and favorite bonuses
+		if note.IsPinned {
+			score += 1.0
+		}
+		if note.IsFavorite {
+			score += 0.5
+		}
 	}
 
 	return score

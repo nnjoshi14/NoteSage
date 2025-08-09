@@ -33,10 +33,11 @@ func setupLoadTest(t *testing.T) {
 		cfg := &config.Config{
 			Database: config.DatabaseConfig{
 				Type: "sqlite",
-				Name: "file::memory:?cache=shared",
+				Name: ":memory:",
 			},
 			Auth: config.AuthConfig{
-				JWTSecret: "test-secret",
+				JWTSecret:      "test-secret",
+				SessionTimeout: 24 * time.Hour,
 			},
 			Features: config.FeaturesConfig{
 				AIEnabled: false,
@@ -85,7 +86,12 @@ func createLoadTestUser(t *testing.T, username string) string {
 
 	var loginResp map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&loginResp)
-	return loginResp["token"].(string)
+
+	token, ok := loginResp["token"].(string)
+	if !ok {
+		t.Fatalf("Failed to extract token from response: %+v", loginResp)
+	}
+	return token
 }
 
 func makeLoadTestRequest(t *testing.T, token, method, path string, body interface{}) *http.Response {
@@ -123,9 +129,13 @@ func TestConcurrentNoteCreation(t *testing.T) {
 	notesPerUser := 5
 	var wg sync.WaitGroup
 
+	// Add timestamp to make usernames unique across test runs
+	timestamp := time.Now().UnixNano()
+
 	tokens := make([]string, numUsers)
 	for i := 0; i < numUsers; i++ {
-		tokens[i] = createLoadTestUser(t, fmt.Sprintf("loaduser%d", i))
+		username := fmt.Sprintf("loaduser%d_%d", i, timestamp)
+		tokens[i] = createLoadTestUser(t, username)
 	}
 
 	for i := 0; i < numUsers; i++ {

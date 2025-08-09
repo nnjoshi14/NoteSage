@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -26,7 +28,8 @@ func setupSecurityTest(t *testing.T) (*httptest.Server, *gorm.DB, string) {
 			Name: ":memory:",
 		},
 		Auth: config.AuthConfig{
-			JWTSecret: "test-secret",
+			JWTSecret:      "test-secret",
+			SessionTimeout: 24 * time.Hour,
 		},
 		Features: config.FeaturesConfig{
 			AIEnabled: false,
@@ -43,7 +46,7 @@ func setupSecurityTest(t *testing.T) (*httptest.Server, *gorm.DB, string) {
 	appRouter := router.Setup(db, cfg)
 	server := httptest.NewServer(appRouter)
 
-	// Create test user
+	// Create test user with correct request structure
 	user := map[string]interface{}{
 		"username": "securitytest",
 		"email":    "security@example.com",
@@ -66,7 +69,11 @@ func setupSecurityTest(t *testing.T) (*httptest.Server, *gorm.DB, string) {
 
 	var loginResp map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&loginResp)
-	token := loginResp["token"].(string)
+
+	token, ok := loginResp["token"].(string)
+	if !ok {
+		t.Fatalf("Failed to extract token from response: %+v", loginResp)
+	}
 
 	t.Cleanup(func() {
 		server.Close()
@@ -80,7 +87,8 @@ func TestSQLInjectionPrevention(t *testing.T) {
 	server, _, token := setupSecurityTest(t)
 
 	maliciousQuery := "' OR '1'='1"
-	resp := makeAuthenticatedRequest(t, server, token, "GET", "/api/notes/search?q="+maliciousQuery, nil)
+	encodedQuery := url.QueryEscape(maliciousQuery)
+	resp := makeAuthenticatedRequest(t, server, token, "GET", "/api/notes/search?q="+encodedQuery, nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var searchResult map[string]interface{}

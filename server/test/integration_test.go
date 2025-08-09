@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -14,7 +15,6 @@ import (
 
 	"notesage-server/internal/config"
 	"notesage-server/internal/database"
-	"notesage-server/internal/models"
 	"notesage-server/internal/router"
 )
 
@@ -27,7 +27,8 @@ func setupIntegrationTest(t *testing.T) (*httptest.Server, *gorm.DB, string) {
 			Name: ":memory:",
 		},
 		Auth: config.AuthConfig{
-			JWTSecret: "test-secret",
+			JWTSecret:      "test-secret",
+			SessionTimeout: 24 * time.Hour,
 		},
 		Features: config.FeaturesConfig{
 			AIEnabled: false,
@@ -45,11 +46,11 @@ func setupIntegrationTest(t *testing.T) (*httptest.Server, *gorm.DB, string) {
 	appRouter := router.Setup(db, cfg)
 	server := httptest.NewServer(appRouter)
 
-	// Create test user
-	user := models.User{
-		Username: "testuser",
-		Email:    "test@example.com",
-		Password: "password123",
+	// Create test user with correct request structure
+	user := map[string]interface{}{
+		"username": "testuser",
+		"email":    "test@example.com",
+		"password": "password123",
 	}
 
 	// Create user
@@ -70,7 +71,11 @@ func setupIntegrationTest(t *testing.T) (*httptest.Server, *gorm.DB, string) {
 
 	var loginResp map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&loginResp)
-	token := loginResp["token"].(string)
+
+	token, ok := loginResp["token"].(string)
+	if !ok {
+		t.Fatalf("Failed to extract token from response: %+v", loginResp)
+	}
 
 	t.Cleanup(func() {
 		server.Close()

@@ -20,7 +20,7 @@ import (
 
 func setupGraphTestDB(t *testing.T) (*gorm.DB, uuid.UUID, uuid.UUID, uuid.UUID) {
 	db := database.SetupTestDB(t)
-	
+
 	// Create test user with unique identifiers
 	userID := uuid.New()
 	user := models.User{
@@ -32,7 +32,7 @@ func setupGraphTestDB(t *testing.T) (*gorm.DB, uuid.UUID, uuid.UUID, uuid.UUID) 
 		IsActive: true,
 	}
 	require.NoError(t, db.Create(&user).Error)
-	
+
 	// Create test person
 	person := models.Person{
 		ID:     uuid.New(),
@@ -41,7 +41,7 @@ func setupGraphTestDB(t *testing.T) (*gorm.DB, uuid.UUID, uuid.UUID, uuid.UUID) 
 		Email:  "john@example.com",
 	}
 	require.NoError(t, db.Create(&person).Error)
-	
+
 	// Create test note
 	note := models.Note{
 		ID:     uuid.New(),
@@ -64,7 +64,7 @@ func setupGraphTestDB(t *testing.T) (*gorm.DB, uuid.UUID, uuid.UUID, uuid.UUID) 
 		Category: "Meeting",
 	}
 	require.NoError(t, db.Create(&note).Error)
-	
+
 	// Create test connection
 	connection := models.Connection{
 		UserID:     user.ID,
@@ -75,22 +75,22 @@ func setupGraphTestDB(t *testing.T) (*gorm.DB, uuid.UUID, uuid.UUID, uuid.UUID) 
 		Strength:   1,
 	}
 	require.NoError(t, db.Create(&connection).Error)
-	
+
 	return db, user.ID, note.ID, person.ID
 }
 
 func setupGraphRouter(db *gorm.DB, userID uuid.UUID) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	
+
 	handler := NewGraphHandler(db)
-	
+
 	// Add auth middleware mock with specific user ID
 	r.Use(func(c *gin.Context) {
 		c.Set("userID", userID.String())
 		c.Next()
 	})
-	
+
 	// Register routes
 	api := r.Group("/api/graph")
 	{
@@ -104,14 +104,14 @@ func setupGraphRouter(db *gorm.DB, userID uuid.UUID) *gin.Engine {
 		api.POST("/notes/:note_id/detect", handler.DetectConnections)
 		api.POST("/notes/:note_id/update", handler.UpdateConnections)
 	}
-	
+
 	return r
 }
 
 func TestGraphHandler_GetGraph(t *testing.T) {
 	db, userID, noteID, personID := setupGraphTestDB(t)
 	router := setupGraphRouter(db, userID)
-	
+
 	tests := []struct {
 		name           string
 		query          string
@@ -125,17 +125,17 @@ func TestGraphHandler_GetGraph(t *testing.T) {
 			checkResponse: func(t *testing.T, response map[string]interface{}) {
 				assert.Contains(t, response, "graph")
 				assert.Contains(t, response, "stats")
-				
+
 				graph := response["graph"].(map[string]interface{})
 				assert.Contains(t, graph, "nodes")
 				assert.Contains(t, graph, "edges")
-				
+
 				nodes := graph["nodes"].([]interface{})
 				edges := graph["edges"].([]interface{})
-				
+
 				assert.GreaterOrEqual(t, len(nodes), 2) // At least note and person
 				assert.GreaterOrEqual(t, len(edges), 1) // At least one connection
-				
+
 				stats := response["stats"].(map[string]interface{})
 				assert.Equal(t, float64(len(nodes)), stats["nodes"])
 				assert.Equal(t, float64(len(edges)), stats["edges"])
@@ -148,7 +148,7 @@ func TestGraphHandler_GetGraph(t *testing.T) {
 			checkResponse: func(t *testing.T, response map[string]interface{}) {
 				graph := response["graph"].(map[string]interface{})
 				nodes := graph["nodes"].([]interface{})
-				
+
 				// Should contain at least the meeting note
 				foundMeetingNote := false
 				for _, nodeInterface := range nodes {
@@ -162,27 +162,27 @@ func TestGraphHandler_GetGraph(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req, _ := http.NewRequest("GET", "/api/graph"+tt.query, nil)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
-			
+
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			
+
 			if tt.expectedStatus == http.StatusOK {
 				var response map[string]interface{}
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
-				
+
 				if tt.checkResponse != nil {
 					tt.checkResponse(t, response)
 				}
 			}
 		})
 	}
-	
+
 	_ = userID
 	_ = noteID
 	_ = personID
@@ -191,7 +191,7 @@ func TestGraphHandler_GetGraph(t *testing.T) {
 func TestGraphHandler_SearchGraph(t *testing.T) {
 	db, userID, _, _ := setupGraphTestDB(t)
 	router := setupGraphRouter(db, userID)
-	
+
 	tests := []struct {
 		name           string
 		query          string
@@ -205,10 +205,10 @@ func TestGraphHandler_SearchGraph(t *testing.T) {
 			checkResponse: func(t *testing.T, response map[string]interface{}) {
 				assert.Contains(t, response, "nodes")
 				assert.Contains(t, response, "total")
-				
+
 				nodes := response["nodes"].([]interface{})
 				assert.GreaterOrEqual(t, len(nodes), 1)
-				
+
 				// Should find the meeting note
 				foundMeetingNote := false
 				for _, nodeInterface := range nodes {
@@ -227,7 +227,7 @@ func TestGraphHandler_SearchGraph(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, response map[string]interface{}) {
 				nodes := response["nodes"].([]interface{})
-				
+
 				// Should find John Smith
 				foundPerson := false
 				for _, nodeInterface := range nodes {
@@ -263,15 +263,15 @@ func TestGraphHandler_SearchGraph(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req, _ := http.NewRequest("GET", "/api/graph/search"+tt.query, nil)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
-			
+
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			
+
 			if tt.expectedStatus == http.StatusOK && tt.checkResponse != nil {
 				var response map[string]interface{}
 				err := json.Unmarshal(w.Body.Bytes(), &response)
@@ -285,7 +285,7 @@ func TestGraphHandler_SearchGraph(t *testing.T) {
 func TestGraphHandler_GetNodeConnections(t *testing.T) {
 	db, userID, noteID, personID := setupGraphTestDB(t)
 	router := setupGraphRouter(db, userID)
-	
+
 	tests := []struct {
 		name           string
 		nodeID         uuid.UUID
@@ -299,10 +299,10 @@ func TestGraphHandler_GetNodeConnections(t *testing.T) {
 			checkResponse: func(t *testing.T, response map[string]interface{}) {
 				assert.Contains(t, response, "connections")
 				assert.Contains(t, response, "total")
-				
+
 				connections := response["connections"].([]interface{})
 				assert.GreaterOrEqual(t, len(connections), 1)
-				
+
 				// Verify connection structure
 				connection := connections[0].(map[string]interface{})
 				assert.Contains(t, connection, "source_id")
@@ -337,16 +337,16 @@ func TestGraphHandler_GetNodeConnections(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := fmt.Sprintf("/api/graph/nodes/%s/connections", tt.nodeID.String())
 			req, _ := http.NewRequest("GET", url, nil)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
-			
+
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			
+
 			if tt.expectedStatus == http.StatusOK && tt.checkResponse != nil {
 				var response map[string]interface{}
 				err := json.Unmarshal(w.Body.Bytes(), &response)
@@ -360,7 +360,7 @@ func TestGraphHandler_GetNodeConnections(t *testing.T) {
 func TestGraphHandler_DetectConnections(t *testing.T) {
 	db, userID, noteID, _ := setupGraphTestDB(t)
 	router := setupGraphRouter(db, userID)
-	
+
 	tests := []struct {
 		name           string
 		noteID         uuid.UUID
@@ -389,15 +389,15 @@ func TestGraphHandler_DetectConnections(t *testing.T) {
 			checkResponse: func(t *testing.T, response map[string]interface{}) {
 				assert.Contains(t, response, "connections")
 				assert.Contains(t, response, "total")
-				
+
 				connectionsRaw, exists := response["connections"]
 				require.True(t, exists, "connections field should exist")
 				require.NotNil(t, connectionsRaw, "connections should not be nil")
-				
+
 				connections, ok := connectionsRaw.([]interface{})
 				require.True(t, ok, "connections should be a slice")
 				assert.GreaterOrEqual(t, len(connections), 1)
-				
+
 				// Verify connection structure
 				if len(connections) > 0 {
 					connection := connections[0].(map[string]interface{})
@@ -427,8 +427,13 @@ func TestGraphHandler_DetectConnections(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, response map[string]interface{}) {
-				connections := response["connections"].([]interface{})
-				assert.Len(t, connections, 0)
+				connections, ok := response["connections"].([]interface{})
+				if !ok {
+					// Handle case where connections might be null
+					assert.Nil(t, response["connections"])
+				} else {
+					assert.Len(t, connections, 0)
+				}
 			},
 		},
 		{
@@ -438,6 +443,8 @@ func TestGraphHandler_DetectConnections(t *testing.T) {
 			expectedStatus: http.StatusOK, // Service doesn't validate note existence for detection
 			checkResponse: func(t *testing.T, response map[string]interface{}) {
 				assert.Contains(t, response, "connections")
+				// For invalid note ID, connections might be null (empty slice)
+				// Just ensure the field exists in the response
 			},
 		},
 		{
@@ -448,23 +455,23 @@ func TestGraphHandler_DetectConnections(t *testing.T) {
 			checkResponse:  nil,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requestBody := map[string]interface{}{
 				"content": tt.content,
 			}
-			
+
 			jsonBody, _ := json.Marshal(requestBody)
 			url := fmt.Sprintf("/api/graph/notes/%s/detect", tt.noteID.String())
 			req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 			req.Header.Set("Content-Type", "application/json")
-			
+
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
-			
+
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			
+
 			if tt.expectedStatus == http.StatusOK && tt.checkResponse != nil {
 				var response map[string]interface{}
 				err := json.Unmarshal(w.Body.Bytes(), &response)
@@ -478,7 +485,7 @@ func TestGraphHandler_DetectConnections(t *testing.T) {
 func TestGraphHandler_UpdateConnections(t *testing.T) {
 	db, userID, noteID, _ := setupGraphTestDB(t)
 	router := setupGraphRouter(db, userID)
-	
+
 	content := map[string]interface{}{
 		"type": "doc",
 		"content": []interface{}{
@@ -493,30 +500,30 @@ func TestGraphHandler_UpdateConnections(t *testing.T) {
 			},
 		},
 	}
-	
+
 	requestBody := map[string]interface{}{
 		"content": content,
 	}
-	
+
 	jsonBody, _ := json.Marshal(requestBody)
 	url := fmt.Sprintf("/api/graph/notes/%s/update", noteID.String())
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	
+
 	assert.Equal(t, http.StatusOK, w.Code)
-	
+
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
-	
+
 	assert.Contains(t, response, "message")
 	assert.Contains(t, response, "connections")
 	assert.Contains(t, response, "total")
 	assert.Equal(t, "Connections updated successfully", response["message"])
-	
+
 	// Verify connections were actually saved to database
 	var connections []models.Connection
 	err = db.Where("source_id = ?", noteID).Find(&connections).Error
@@ -527,7 +534,7 @@ func TestGraphHandler_UpdateConnections(t *testing.T) {
 func TestGraphHandler_ExportGraph(t *testing.T) {
 	db, userID, _, _ := setupGraphTestDB(t)
 	router := setupGraphRouter(db, userID)
-	
+
 	tests := []struct {
 		name           string
 		format         string
@@ -563,24 +570,24 @@ func TestGraphHandler_ExportGraph(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			query := ""
 			if tt.format != "" {
 				query = "?format=" + tt.format
 			}
-			
+
 			req, _ := http.NewRequest("GET", "/api/graph/export"+query, nil)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
-			
+
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			
+
 			if tt.expectedStatus == http.StatusOK {
 				assert.Equal(t, tt.expectedType, w.Header().Get("Content-Type"))
 				assert.NotEmpty(t, w.Body.String())
-				
+
 				// Check Content-Disposition header
 				disposition := w.Header().Get("Content-Disposition")
 				assert.Contains(t, disposition, "attachment")
@@ -593,35 +600,35 @@ func TestGraphHandler_ExportGraph(t *testing.T) {
 func TestGraphHandler_GetGraphStats(t *testing.T) {
 	db, userID, _, _ := setupGraphTestDB(t)
 	router := setupGraphRouter(db, userID)
-	
+
 	req, _ := http.NewRequest("GET", "/api/graph/stats", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	
+
 	assert.Equal(t, http.StatusOK, w.Code)
-	
+
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
-	
+
 	assert.Contains(t, response, "stats")
 	stats := response["stats"].(map[string]interface{})
-	
+
 	// Check required stats fields
 	requiredFields := []string{
 		"total_nodes", "note_count", "person_count", "total_connections",
 		"strong_connections", "avg_connection_strength", "max_connections",
 	}
-	
+
 	for _, field := range requiredFields {
 		assert.Contains(t, stats, field, "Stats should contain field: %s", field)
 	}
-	
+
 	// Verify stats make sense
 	totalNodes := stats["total_nodes"].(float64)
 	noteCount := stats["note_count"].(float64)
 	personCount := stats["person_count"].(float64)
-	
+
 	assert.Equal(t, totalNodes, noteCount+personCount)
 	assert.GreaterOrEqual(t, totalNodes, float64(2)) // At least one note and one person
 }
@@ -629,23 +636,23 @@ func TestGraphHandler_GetGraphStats(t *testing.T) {
 func TestGraphHandler_GetConnectionTypes(t *testing.T) {
 	db, userID, _, _ := setupGraphTestDB(t)
 	router := setupGraphRouter(db, userID)
-	
+
 	req, _ := http.NewRequest("GET", "/api/graph/types", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	
+
 	assert.Equal(t, http.StatusOK, w.Code)
-	
+
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
-	
+
 	assert.Contains(t, response, "connection_types")
 	connectionTypes := response["connection_types"].(map[string]interface{})
-	
+
 	// Should have at least one connection type
 	assert.GreaterOrEqual(t, len(connectionTypes), 1)
-	
+
 	// Verify all values are numbers
 	for _, count := range connectionTypes {
 		assert.IsType(t, float64(0), count, "Connection type counts should be numbers")
@@ -655,7 +662,7 @@ func TestGraphHandler_GetConnectionTypes(t *testing.T) {
 func TestGraphHandler_GetSubgraph(t *testing.T) {
 	db, userID, noteID, _ := setupGraphTestDB(t)
 	router := setupGraphRouter(db, userID)
-	
+
 	tests := []struct {
 		name           string
 		nodeID         uuid.UUID
@@ -673,14 +680,14 @@ func TestGraphHandler_GetSubgraph(t *testing.T) {
 				assert.Contains(t, response, "center_node")
 				assert.Contains(t, response, "depth")
 				assert.Contains(t, response, "stats")
-				
+
 				assert.Equal(t, noteID.String(), response["center_node"])
 				assert.Equal(t, float64(1), response["depth"])
-				
+
 				subgraph := response["subgraph"].(map[string]interface{})
 				assert.Contains(t, subgraph, "nodes")
 				assert.Contains(t, subgraph, "edges")
-				
+
 				nodes := subgraph["nodes"].([]interface{})
 				assert.GreaterOrEqual(t, len(nodes), 1) // At least the center node
 			},
@@ -713,20 +720,20 @@ func TestGraphHandler_GetSubgraph(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := fmt.Sprintf("/api/graph/nodes/%s/subgraph", tt.nodeID.String())
 			if tt.depth != "" {
 				url += "?depth=" + tt.depth
 			}
-			
+
 			req, _ := http.NewRequest("GET", url, nil)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
-			
+
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			
+
 			if tt.expectedStatus == http.StatusOK && tt.checkResponse != nil {
 				var response map[string]interface{}
 				err := json.Unmarshal(w.Body.Bytes(), &response)

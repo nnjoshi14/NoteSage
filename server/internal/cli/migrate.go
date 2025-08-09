@@ -152,7 +152,7 @@ func runMigrateTo(cmd *cobra.Command, args []string) error {
 	}
 
 	targetVersion := args[0]
-	
+
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	if dryRun {
 		fmt.Printf("Would migrate to version: %s\n", targetVersion)
@@ -170,7 +170,7 @@ func runMigrateRollback(cmd *cobra.Command, args []string) error {
 	}
 
 	targetVersion := args[0]
-	
+
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	if dryRun {
 		fmt.Printf("Would rollback to version: %s\n", targetVersion)
@@ -192,7 +192,7 @@ func runMigrateValidate(cmd *cobra.Command, args []string) error {
 
 func runMigrateCreate(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	
+
 	// Get next version number
 	migrator, err := setupMigrator(cmd)
 	if err != nil {
@@ -233,25 +233,25 @@ func migration%sDown(tx *gorm.DB) error {
 `, nextVersion, name, nextVersion, nextVersion, name, nextVersion)
 
 	filename := fmt.Sprintf("server/internal/migrations/%s_%s.go", nextVersion, name)
-	
+
 	if err := os.WriteFile(filename, []byte(template), 0644); err != nil {
 		return fmt.Errorf("failed to create migration file: %w", err)
 	}
 
 	fmt.Printf("Created migration file: %s\n", filename)
 	fmt.Printf("Don't forget to add it to getAllMigrations() in migrations.go\n")
-	
+
 	return nil
 }
 
 func runMigrateForce(cmd *cobra.Command, args []string) error {
-	migrator, err := setupMigrator(cmd)
+	_, err := setupMigrator(cmd)
 	if err != nil {
 		return err
 	}
 
 	version := args[0]
-	
+
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	if dryRun {
 		fmt.Printf("Would force migration version to: %s\n", version)
@@ -260,10 +260,10 @@ func runMigrateForce(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("WARNING: This will force the migration version to %s without running the actual migration!\n", version)
 	fmt.Print("Are you sure? (yes/no): ")
-	
+
 	var confirm string
 	fmt.Scanln(&confirm)
-	
+
 	if confirm != "yes" {
 		fmt.Println("Operation cancelled")
 		return nil

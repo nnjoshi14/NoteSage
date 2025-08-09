@@ -38,6 +38,12 @@ func setupPeopleRouter(t *testing.T) (*gin.Engine, *gorm.DB, *models.User) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
+	// Add test middleware to set userID in context
+	router.Use(func(c *gin.Context) {
+		c.Set("userID", user.ID.String())
+		c.Next()
+	})
+
 	people := router.Group("/people")
 	{
 		people.GET("", personHandler.GetPeople)
@@ -226,19 +232,7 @@ func makePeopleRequest(t *testing.T, router *gin.Engine, method, url string, use
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = req
-	c.Set("userID", userID.String())
-
-	// This is a hack to set the URL parameter for tests
-	if method != "POST" && method != "GET" {
-		// get id from url
-		parts := bytes.Split([]byte(url), []byte("/"))
-		id := string(parts[len(parts)-1])
-		c.Params = gin.Params{{Key: "id", Value: id}}
-	}
-
-	router.ServeHTTP(w, c.Request)
+	router.ServeHTTP(w, req)
 	return w
 }
 

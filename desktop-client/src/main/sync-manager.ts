@@ -702,7 +702,7 @@ export class SyncManager {
   private async applyMergedData(client: AxiosInstance, conflict: SyncConflict, mergedData: any): Promise<void> {
     // Update both local and remote with merged data
     switch (conflict.type) {
-      case 'note':
+      case 'note': {
         // Merge with local data to ensure all required fields are present
         const noteToSave = {
           ...conflict.localData,
@@ -712,7 +712,8 @@ export class SyncManager {
         await this.offlineCache.saveNote(noteToSave);
         await this.pushNoteToServer(client, noteToSave);
         break;
-      case 'person':
+      }
+      case 'person': {
         const personToSave = {
           ...conflict.localData,
           ...mergedData,
@@ -721,7 +722,8 @@ export class SyncManager {
         await this.offlineCache.savePerson(personToSave);
         await this.pushPersonToServer(client, personToSave);
         break;
-      case 'todo':
+      }
+      case 'todo': {
         const todoToSave = {
           ...conflict.localData,
           ...mergedData,
@@ -730,6 +732,7 @@ export class SyncManager {
         await this.offlineCache.saveTodo(todoToSave);
         await this.pushTodoToServer(client, todoToSave);
         break;
+      }
     }
   }
 
@@ -829,7 +832,7 @@ export class SyncManager {
           });
           return savedNote;
         }
-      } catch (error) {
+      } catch {
         // Fallback to offline
       }
     }
@@ -856,7 +859,7 @@ export class SyncManager {
           });
           return savedNote;
         }
-      } catch (error) {
+      } catch {
         // Fallback to offline
       }
     }
@@ -881,7 +884,7 @@ export class SyncManager {
           await this.offlineCache.deleteNote(id);
           return;
         }
-      } catch (error) {
+      } catch {
         // Fallback to offline
       }
     }

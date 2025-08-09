@@ -236,7 +236,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           className={`toolbar-button ${editor.isActive('blockquote') ? 'active' : ''}`}
           title="Quote"
         >
-          " Quote
+          &quot; Quote
         </button>
         <button
           onClick={insertCodeBlock}

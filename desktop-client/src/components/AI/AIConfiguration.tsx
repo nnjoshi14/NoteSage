@@ -46,7 +46,7 @@ const AIConfiguration: React.FC = () => {
     try {
       await dispatch(updateAIConfig(formData)).unwrap();
       setTestResult('success');
-    } catch (error) {
+    } catch {
       setTestResult('failure');
     }
   };
@@ -61,7 +61,7 @@ const AIConfiguration: React.FC = () => {
       await dispatch(updateAIConfig(formData)).unwrap();
       await dispatch(testAIConnection()).unwrap();
       setTestResult('success');
-    } catch (error) {
+    } catch {
       setTestResult('failure');
     }
   };

@@ -110,13 +110,13 @@ const PersonForm: React.FC<PersonFormProps> = ({
 
   const isValidPhone = (phone: string): boolean => {
     // Basic phone validation - allows various formats
-    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-    const cleanPhone = phone.replace(/[\s\-\(\)\.]/g, '');
+    const phoneRegex = /^[+]?[1-9][\d]{0,15}$/;
+    const cleanPhone = phone.replace(/[\s\-().]/g, '');
     return phoneRegex.test(cleanPhone);
   };
 
   const isValidLinkedInUrl = (url: string): boolean => {
-    const linkedinRegex = /^https?:\/\/(www\.)?linkedin\.com\/in\/[a-zA-Z0-9\-]+\/?$/;
+    const linkedinRegex = /^https?:\/\/(www\.)?linkedin\.com\/in\/[a-zA-Z0-9-]+\/?$/;
     return linkedinRegex.test(url);
   };
 

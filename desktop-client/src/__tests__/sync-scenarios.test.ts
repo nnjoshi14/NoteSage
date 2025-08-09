@@ -308,7 +308,7 @@ describe('Offline/Online Synchronization Scenarios', () => {
         title: 'Updated Consistency Test',
       });
 
-      const updatedNote = await syncManager.updateNote(note.id, {
+      await syncManager.updateNote(note.id, {
         title: 'Updated Consistency Test',
       });
 

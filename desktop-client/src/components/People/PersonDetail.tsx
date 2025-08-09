@@ -290,7 +290,7 @@ const PersonDetail: React.FC<PersonDetailProps> = ({
                   <div className="empty-state">
                     <p>No connections found.</p>
                     <p className="empty-state-subtitle">
-                      This person hasn't been mentioned in any notes yet.
+                      This person hasn&apos;t been mentioned in any notes yet.
                     </p>
                   </div>
                 ) : (

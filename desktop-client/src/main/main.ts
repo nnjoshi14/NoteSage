@@ -868,7 +868,7 @@ class NoteSageApp {
             return { success: false, error: 'Unsupported format' };
         }
 
-        const fs = require('fs').promises;
+        const fs = await import('fs/promises');
         await fs.writeFile(filePath, content, 'utf8');
         return { success: true };
       } catch (error) {
@@ -1045,10 +1045,10 @@ class NoteSageApp {
 
   private async getAIConfig(): Promise<any> {
     try {
-      const { safeStorage } = require('electron');
-      const fs = require('fs').promises;
-      const os = require('os');
-      const path = require('path');
+      const { safeStorage } = await import('electron');
+      const fs = await import('fs/promises');
+      const os = await import('os');
+      const path = await import('path');
       
       const configDir = path.join(os.homedir(), '.notesage');
       const configPath = path.join(configDir, 'ai-config.json');
@@ -1083,10 +1083,10 @@ class NoteSageApp {
 
   private async setAIConfig(config: any): Promise<void> {
     try {
-      const { safeStorage } = require('electron');
-      const fs = require('fs').promises;
-      const os = require('os');
-      const path = require('path');
+      const { safeStorage } = await import('electron');
+      const fs = await import('fs/promises');
+      const os = await import('os');
+      const path = await import('path');
       
       const configDir = path.join(os.homedir(), '.notesage');
       const configPath = path.join(configDir, 'ai-config.json');
@@ -1094,7 +1094,7 @@ class NoteSageApp {
       // Ensure config directory exists
       try {
         await fs.mkdir(configDir, { recursive: true });
-      } catch (error) {
+      } catch {
         // Directory might already exist
       }
       

@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '@/stores/hooks';
 import { generateInsights, clearError } from '@/stores/slices/aiSlice';
-import { InsightResult } from '@/services/aiService';
+
 import './AIInsights.css';
 
 const AIInsights: React.FC = () => {
@@ -19,25 +19,7 @@ const AIInsights: React.FC = () => {
   
   const [autoRefresh, setAutoRefresh] = useState(false);
 
-  useEffect(() => {
-    // Auto-generate insights on component mount if AI is available and we have data
-    if (isAvailable && notes.length > 0 && !insights) {
-      handleGenerateInsights();
-    }
-  }, [isAvailable, notes.length]);
-
-  useEffect(() => {
-    // Set up auto-refresh if enabled
-    if (autoRefresh && isAvailable) {
-      const interval = setInterval(() => {
-        handleGenerateInsights();
-      }, 5 * 60 * 1000); // Refresh every 5 minutes
-
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh, isAvailable]);
-
-  const handleGenerateInsights = async () => {
+  const handleGenerateInsights = useCallback(async () => {
     if (!isAvailable || notes.length === 0) {
       return;
     }
@@ -59,7 +41,25 @@ const AIInsights: React.FC = () => {
     } catch (error) {
       console.error('Failed to generate insights:', error);
     }
-  };
+  }, [isAvailable, notes, people, dispatch]);
+
+  useEffect(() => {
+    // Auto-generate insights on component mount if AI is available and we have data
+    if (isAvailable && notes.length > 0 && !insights) {
+      handleGenerateInsights();
+    }
+  }, [isAvailable, notes.length, insights, handleGenerateInsights]);
+
+  useEffect(() => {
+    // Set up auto-refresh if enabled
+    if (autoRefresh && isAvailable) {
+      const interval = setInterval(() => {
+        handleGenerateInsights();
+      }, 5 * 60 * 1000); // Refresh every 5 minutes
+
+      return () => clearInterval(interval);
+    }
+  }, [autoRefresh, isAvailable, handleGenerateInsights]);
 
   const getInsightIcon = (type: string) => {
     switch (type) {

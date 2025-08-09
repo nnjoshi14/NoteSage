@@ -24,7 +24,7 @@ jest.mock('@/services/aiService', () => ({
   },
 }));
 
-const { aiService } = require('@/services/aiService');
+import { aiService } from '@/services/aiService';
 
 describe('aiSlice', () => {
   let store: ReturnType<typeof configureStore>;

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
@@ -68,7 +68,7 @@ describe('Desktop Client Installer Validation', () => {
         const stats = await fs.stat(binaryPath);
         expect(stats.mode & 0o111).toBeTruthy(); // Check execute permissions
 
-      } catch (error) {
+      } catch {
         console.log('Skipping .deb validation - dpkg-deb not available');
       }
     });
@@ -114,7 +114,7 @@ describe('Desktop Client Installer Validation', () => {
             await execAsync(`hdiutil detach "${mountPoint}" -quiet`);
           }
 
-        } catch (error) {
+        } catch {
           console.log('Skipping .dmg validation - hdiutil not available or failed');
         }
       }
@@ -134,7 +134,7 @@ describe('Desktop Client Installer Validation', () => {
         expect(stderr).toBe('');
         expect(stdout).toContain('Installation test completed successfully');
         
-      } catch (error) {
+      } catch {
         console.log('Skipping installer script validation - script not found');
       }
     });
@@ -211,7 +211,7 @@ describe('Desktop Client Installer Validation', () => {
         expect(autoUpdaterContent).toContain('error');
         expect(autoUpdaterContent).toContain('catch');
 
-      } catch (error) {
+      } catch {
         console.log('Skipping auto-updater validation - file not found');
       }
     });
@@ -234,7 +234,7 @@ describe('Desktop Client Installer Validation', () => {
         expect(notificationContent).toContain('download');
         expect(notificationContent).toContain('restart');
 
-      } catch (error) {
+      } catch {
         console.log('Skipping update notification validation - file not found');
       }
     });
@@ -295,7 +295,7 @@ describe('Desktop Client Installer Validation', () => {
         expect(entitlementsContent).toContain('com.apple.security.cs.allow-unsigned-executable-memory');
         expect(entitlementsContent).toContain('com.apple.security.cs.disable-library-validation');
 
-      } catch (error) {
+      } catch {
         console.log('Skipping entitlements validation - file not found');
       }
     });
@@ -315,7 +315,7 @@ describe('Desktop Client Installer Validation', () => {
         expect(preloadContent).toContain('contextIsolation');
         expect(preloadContent).toContain('contextBridge');
 
-      } catch (error) {
+      } catch {
         console.log('Skipping secure storage validation - file not found');
       }
     });
@@ -354,7 +354,7 @@ describe('Desktop Client Installer Validation', () => {
         // Bundle should be reasonable size (less than 500MB)
         expect(bundleSizeMB).toBeLessThan(500);
 
-      } catch (error) {
+      } catch {
         console.log('Skipping bundle size validation - dist not found');
       }
     });
@@ -376,7 +376,7 @@ describe('Desktop Client Installer Validation', () => {
         expect(mainContent).toContain('BrowserWindow');
         expect(mainContent).toContain('webPreferences');
 
-      } catch (error) {
+      } catch {
         console.log('Skipping startup performance validation - file not found');
       }
     });

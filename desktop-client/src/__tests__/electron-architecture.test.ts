@@ -94,9 +94,9 @@ describe('Electron Application Architecture', () => {
   });
 
   describe('Main Process Security Configuration', () => {
-    it('should configure security policies', () => {
+    it('should configure security policies', async () => {
       // Import after mocking
-      require('../main/main');
+      await import('../main/main');
       
       expect(mockElectron.app.commandLine.appendSwitch).toHaveBeenCalledWith(
         'disable-features',
@@ -104,8 +104,8 @@ describe('Electron Application Architecture', () => {
       );
     });
 
-    it('should set up proper window security', () => {
-      require('../main/main');
+    it('should set up proper window security', async () => {
+      await import('../main/main');
       
       expect(mockElectron.BrowserWindow).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -126,8 +126,8 @@ describe('Electron Application Architecture', () => {
   });
 
   describe('IPC Communication', () => {
-    it('should register all required IPC handlers', () => {
-      require('../main/main');
+    it('should register all required IPC handlers', async () => {
+      await import('../main/main');
       
       const expectedHandlers = [
         'connect-to-server',
@@ -157,8 +157,8 @@ describe('Electron Application Architecture', () => {
   });
 
   describe('Application Menu', () => {
-    it('should create comprehensive application menu', () => {
-      require('../main/main');
+    it('should create comprehensive application menu', async () => {
+      await import('../main/main');
       
       expect(mockElectron.Menu.buildFromTemplate).toHaveBeenCalledWith(
         expect.arrayContaining([
@@ -174,8 +174,8 @@ describe('Electron Application Architecture', () => {
   });
 
   describe('Window Management', () => {
-    it('should create window with proper configuration', () => {
-      require('../main/main');
+    it('should create window with proper configuration', async () => {
+      await import('../main/main');
       
       expect(mockElectron.BrowserWindow).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -191,8 +191,8 @@ describe('Electron Application Architecture', () => {
 });
 
 describe('Preload Script', () => {
-  it('should expose secure API to renderer', () => {
-    require('../main/preload');
+  it('should expose secure API to renderer', async () => {
+    await import('../main/preload');
     
     expect(mockElectron.contextBridge.exposeInMainWorld).toHaveBeenCalledWith(
       'electronAPI',
@@ -242,8 +242,8 @@ describe('Preload Script', () => {
 });
 
 describe('Redux Store Configuration', () => {
-  it('should configure store with proper middleware', () => {
-    const { store } = require('../stores/store');
+  it('should configure store with proper middleware', async () => {
+    const { store } = await import('../stores/store');
     
     expect(store).toBeDefined();
     expect(store.getState()).toEqual(
@@ -256,8 +256,8 @@ describe('Redux Store Configuration', () => {
     );
   });
 
-  it('should have proper TypeScript types', () => {
-    const storeModule = require('../stores/store');
+  it('should have proper TypeScript types', async () => {
+    const storeModule = await import('../stores/store');
     
     expect(storeModule.store).toBeDefined();
     // TypeScript types are checked at compile time
@@ -266,7 +266,7 @@ describe('Redux Store Configuration', () => {
 });
 
 describe('React Application', () => {
-  it('should render without crashing', () => {
+  it('should render without crashing', async () => {
     // Mock window.electronAPI
     (global as any).window = {
       electronAPI: {
@@ -281,15 +281,15 @@ describe('React Application', () => {
 
     // This would require React Testing Library in a real test
     // For now, we just verify the component can be imported
-    const App = require('../renderer/App').default;
+    const { default: App } = await import('../renderer/App');
     expect(App).toBeDefined();
   });
 });
 
 describe('Build Configuration', () => {
-  it('should have proper webpack configuration', () => {
-    const webpackConfig = require('../../webpack.config.js');
-    const config = webpackConfig({}, { mode: 'development' });
+  it('should have proper webpack configuration', async () => {
+    const webpackConfig = await import('../../webpack.config.js');
+    const config = webpackConfig.default({}, { mode: 'development' });
     
     expect(config).toEqual(
       expect.objectContaining({
@@ -310,9 +310,9 @@ describe('Build Configuration', () => {
     );
   });
 
-  it('should have proper TypeScript configuration', () => {
-    const fs = require('fs');
-    const path = require('path');
+  it('should have proper TypeScript configuration', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
     
     const tsconfigPath = path.join(__dirname, '../../tsconfig.json');
     const tsconfigMainPath = path.join(__dirname, '../../tsconfig.main.json');

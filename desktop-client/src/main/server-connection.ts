@@ -485,7 +485,7 @@ export class ServerConnectionManager {
         this.reconnectDelay = 1000;
       }
       return true;
-    } catch (error) {
+    } catch {
       if (this.status.connected) {
         this.handleConnectionLoss();
       }

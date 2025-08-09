@@ -233,7 +233,7 @@ export const CacheSettings: React.FC<CacheSettingsProps> = ({ className = '' }) 
         {cacheStats.pendingChanges > 0 && (
           <div className="info-item warning">
             <strong>Note:</strong> You have {cacheStats.pendingChanges} pending changes that 
-            haven't been synced to the server yet. Make sure to sync before clearing the cache.
+            haven&apos;t been synced to the server yet. Make sure to sync before clearing the cache.
           </div>
         )}
       </div>

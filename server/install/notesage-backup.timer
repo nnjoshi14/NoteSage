@@ -1,0 +1,13 @@
+[Unit]
+Description=NoteSage Backup Timer
+Documentation=https://github.com/notesage/server
+Requires=notesage-backup.service
+
+[Timer]
+# Run daily at 2 AM
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=300  # Add up to 5 minutes random delay
+
+[Install]
+WantedBy=timers.target

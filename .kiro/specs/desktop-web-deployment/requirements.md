@@ -1,0 +1,172 @@
+# Requirements Document
+
+## Introduction
+
+This feature enables NoteSage to run as a native desktop application, providing users with a standalone knowledge management solution. The desktop application will package the existing React/Express stack into a native desktop experience using Electron, with all current features including rich text editing, people management, AI-powered insights, knowledge graph visualization, and todo management.
+
+## Requirements
+
+### Requirement 1
+
+**User Story:** As a user, I want to create and edit rich text notes in the desktop application, so that I can capture my thoughts and knowledge with formatting backlinks and @mentions.
+
+#### Acceptance Criteria
+
+1. WHEN the user creates a new note THEN the system SHALL provide a rich text editor with formatting options (bold, italic, headings, lists, quotes, code)
+2. WHEN the user types @ in a note THEN the system SHALL show a dropdown of people to mention. If user types after @ the system should show users starting name or surname with given text.
+3. WHEN the user types # in a note THEN the system SHALL show a dropdown of note titles to mention where last edited note should appear first. If user is typing after # it should list notes starting with given string.
+4. WHEN the user types "/" in a note THEN the system SHALL show slash commands for quick insertion of content types (tables, code blocks, callouts, etc.)
+5. WHEN the user creates tables THEN the system SHALL provide table editing capabilities with add/remove rows and columns
+6. WHEN the user adds images or files THEN the system SHALL support embedding and displaying media content within notes
+7. WHEN the user creates mermaid diagrams THEN the system SHALL support rendering of flowcharts, sequence diagrams, and other mermaid diagram types
+8. WHEN the user creates callouts THEN the system SHALL provide info boxes, warnings, tips, and other styled content blocks
+9. WHEN the user adds code blocks THEN the system SHALL provide syntax highlighting for different programming languages
+10. WHEN the user performs global search THEN the system SHALL search across all note content with filtering options
+11. WHEN the user opens quick switcher THEN the system SHALL provide fast note navigation with fuzzy search
+12. WHEN the user accesses recent notes THEN the system SHALL show recently viewed/edited notes for quick access
+13. WHEN the user creates templates THEN the system SHALL allow saving and reusing note templates
+14. WHEN the user archives notes THEN the system SHALL move notes to archive without deleting them
+15. WHEN the user pins notes THEN the system SHALL mark important notes for quick access
+16. WHEN the user switches to markdown mode THEN the system SHALL provide raw markdown editing capabilities
+17. WHEN the user performs block operations THEN the system SHALL allow moving, duplicating, and deleting content blocks
+18. WHEN the user types THEN the system SHALL provide auto-completion and smart suggestions
+19. WHEN the user adds tags THEN the system SHALL support flexible tagging system with nested hierarchical tags
+20. WHEN the user bookmarks notes THEN the system SHALL allow marking frequently accessed notes as favorites
+21. WHEN the user sorts notes THEN the system SHALL provide custom sorting by various criteria (date, title, category, etc.)
+22. WHEN the user exports notes THEN the system SHALL support export to PDF, Markdown, and HTML formats
+23. WHEN the user tracks changes THEN the system SHALL maintain version history for notes
+24. Note should have categories field, with support to add custom categories. Default categories should be Note & Meeting.
+25. System should allow to organize notes in hierarchical folder structure through database relationships.
+26. WHEN the user saves a note THEN the system SHALL automatically save changes to the cloud database with local cache for offline access.
+27. WHEN the user views a note THEN the system SHALL open note to edit. View to edit should be the setting and readonly notes are not needed.
+28. IF the user mentions a person or note THEN the system SHALL create a connection between the note and that person
+29. On given note User should be able to see list of other notes and their edit times from which this note is referred.
+30. WHEN the user deletes a note THEN the system SHALL move the note to trash and allow permanent deletion or restoration
+31. WHEN the user filters notes THEN the system SHALL provide filtering by categories, tags, date ranges, and other criteria
+32. WHEN the user searches notes THEN the system SHALL provide advanced search with filters, operators, and content-specific search options 
+
+### Requirement 2
+
+**User Story:** As a user, I want to manage my contacts and people in the desktop application, so that I can track relationships and connections in my knowledge base.
+
+#### Acceptance Criteria
+
+1. WHEN the user adds a new person THEN the system SHALL allow entering name, email, phone, company, title, LinkedIn URL, and notes
+2. WHEN the user views a person THEN the system SHALL show all connected notes and relationship count
+3. WHEN the user edits a person THEN the system SHALL update the information and maintain existing connections
+4. WHEN the user deletes a person THEN the system SHALL remove the person but preserve note content
+5. IF a person has an avatar URL THEN the system SHALL display their profile image
+
+### Requirement 3
+
+**User Story:** As a user, I want to manage todos and tasks in the desktop application, so that I can track action items extracted from my notes.
+
+#### Acceptance Criteria
+
+1. WHEN the user creates a todo THEN the system SHALL use the format "- [ ][t1] <text> @<person> <date>" with auto-generated unique IDs per note
+2. WHEN the user saves a note THEN the system SHALL immediately scan for todo items using the ID-based format and update the todo index in real-time
+3. WHEN the user clicks manual sync THEN the system SHALL scan only notes modified since last scan timestamp and update todo relationships
+4. WHEN the system generates todo IDs THEN the system SHALL create note-scoped unique identifiers (t1, t2, t3, etc.) that remain stable even when note content changes
+5. WHEN the user marks a todo as complete THEN the system SHALL update the checkbox to [x] and update the database status using the composite key (note_path + todo_id)
+6. WHEN the user views a todo THEN the system SHALL show which note it came from and preserve the stable todo ID reference
+7. WHEN parsing todos THEN the system SHALL extract optional @person mentions and date information from the structured todo format
+8. WHEN the system tracks todos THEN the system SHALL maintain last_scanned timestamp per note to avoid unnecessary re-processing during manual sync
+9. WHEN the user creates a todo view THEN the system SHALL allow filtering todos based on search criteria with option to include only pending todos
+10. WHEN the user accesses calendar view THEN the system SHALL display todos with due dates extracted from the todo format in a calendar interface
+11. WHEN the user assigns a todo to a person using @mention THEN the system SHALL link the todo to that person and show it in their profile
+12. WHEN AI extracts todos from notes THEN the system SHALL automatically assign unique IDs and format them according to the standard todo format
+13. IF a note is deleted THEN the system SHALL preserve associated todos with note reference but mark the source as unavailable
+14. WHEN displaying todos THEN the system SHALL show extracted person assignments and due dates parsed from the structured format
+
+### Requirement 4
+
+**User Story:** As a user, I want to visualize my knowledge graph in the desktop application, so that I can see connections between my notes and people.
+
+#### Acceptance Criteria
+
+1. WHEN the user opens the knowledge graph THEN the system SHALL display an interactive visualization
+2. WHEN the user clicks on a node THEN the system SHALL show details about that note or person
+3. WHEN the user drags a node THEN the system SHALL allow repositioning and update the graph layout
+4. WHEN the user searches in the graph THEN the system SHALL filter nodes based on the search query
+5. IF there are no connections THEN the system SHALL show an empty state with helpful instructions
+
+### Requirement 5
+
+**User Story:** As a user, I want AI-powered features in the desktop application, so that I can get insights, extract todos, and analyze relationships automatically.
+
+#### Acceptance Criteria
+
+1. WHEN the user configures an AI provider (OpenAI, Gemini, or Grok) THEN the system SHALL store the API key securely locally
+2. WHEN the user saves a note with AI enabled THEN the system SHALL automatically extract todos and analyze mentioned people
+3. WHEN the user requests insights THEN the system SHALL generate patterns, suggestions, and connections from their knowledge base
+4. WHEN AI services are unavailable THEN the system SHALL gracefully degrade without breaking core functionality
+5. IF no AI provider is configured THEN the system SHALL still provide all manual features
+
+### Requirement 6
+
+**User Story:** As a user, I want to configure my server connection and offline preferences, so that I can control how my data is synchronized and cached locally.
+
+#### Acceptance Criteria
+
+1. WHEN the user first launches the application THEN the system SHALL prompt for server connection and create local cache for offline access
+2. WHEN the user configures sync settings THEN the system SHALL allow controlling sync frequency and offline cache size
+3. WHEN the user wants to backup data THEN the system SHALL provide export functionality to standard formats (PDF, Markdown, HTML)
+4. WHEN the user works offline THEN the system SHALL queue changes and sync when server connection is restored
+5. IF server connection fails THEN the system SHALL continue working with local cache and display connection status
+
+### Requirement 7
+
+**User Story:** As a user, I want easy installation and setup processes, so that I can quickly get started with NoteSage without technical complexity.
+
+#### Acceptance Criteria
+
+1. WHEN installing the desktop application THEN the system SHALL provide platform-specific installers for Ubuntu Linux and macOS with auto-update capabilities
+2. WHEN first launching the application THEN the system SHALL automatically handle database initialization
+3. WHEN the application starts THEN the system SHALL automatically run necessary database migrations
+4. WHEN environment setup is needed THEN the system SHALL provide clear documentation and automated setup
+5. IF setup fails THEN the system SHALL provide helpful error messages and troubleshooting guidance
+
+### Requirement 8
+
+**User Story:** As a user, I want to connect my desktop application to a NoteSage server (local or cloud), so that I can access my data and collaborate with others.
+
+#### Acceptance Criteria
+
+1. WHEN the user first launches the desktop application THEN the system SHALL prompt for server connection details (URL, port, credentials)
+2. WHEN the user connects to a server THEN the system SHALL authenticate and establish connection to the specified server instance
+3. WHEN the server supports multiple users THEN the system SHALL handle user authentication and authorization properly
+4. WHEN switching between servers THEN the system SHALL allow users to configure multiple server profiles and switch between them
+5. WHEN the server is unavailable THEN the system SHALL continue working with local cache and display connection status
+6. WHEN configuring server settings THEN the system SHALL allow users to specify server URL, port, authentication credentials, and connection preferences
+7. WHEN the desktop app updates THEN the system SHALL maintain compatibility with existing server installations
+8. WHEN connecting to different server versions THEN the system SHALL handle API version compatibility gracefully
+
+### Requirement 9
+
+**User Story:** As an administrator, I want to install and manage a NoteSage server, so that I can provide NoteSage services to multiple users on my network or organization.
+
+#### Acceptance Criteria
+
+1. WHEN installing the server THEN the system SHALL provide Ubuntu Linux installation packages with automated installer, configuration wizard, and upgrade system
+2. WHEN the server starts THEN the system SHALL initialize the database and create necessary tables and indexes
+3. WHEN configuring the server THEN the system SHALL allow setting up database connection, port, authentication method, and user management
+4. WHEN managing users THEN the system SHALL provide user creation, authentication, and authorization capabilities
+5. WHEN the server runs THEN the system SHALL support multiple concurrent desktop clients connecting simultaneously
+6. WHEN backing up data THEN the system SHALL provide database backup and restore functionality
+7. WHEN upgrading the server THEN the system SHALL handle database migrations and maintain data integrity
+8. WHEN deploying to cloud THEN the system SHALL support the same server package with minimal configuration changes
+
+### Requirement 10
+
+**User Story:** As a user, I want NoteSage to be available across multiple platforms (desktop, web, mobile), so that I can access my knowledge base from any device while connecting to the same server.
+
+#### Acceptance Criteria
+
+1. WHEN the system is architected THEN the system SHALL support a multi-platform approach with desktop (current focus), web, Android, and iOS clients
+2. WHEN designing the architecture THEN the system SHALL separate server backend from client applications completely
+3. WHEN building client applications THEN the system SHALL ensure all clients connect to the same server API
+4. WHEN planning for future deployment THEN the system SHALL design server for both local installation and cloud deployment
+5. WHEN considering mobile platforms THEN the system SHALL design data models and APIs that work across all client platforms
+6. WHEN implementing server features THEN the system SHALL ensure the same server package can run locally or in the cloud without code changes
+7. WHEN designing data storage THEN the system SHALL use the same database schema whether server runs locally or in cloud
+8. WHEN building platform-specific features THEN the system SHALL maintain feature parity where possible across all client platforms

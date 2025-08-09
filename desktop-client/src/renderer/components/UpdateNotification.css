@@ -1,0 +1,346 @@
+.update-check-button {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+.update-check-button button {
+  background: #007acc;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.update-check-button button:hover:not(:disabled) {
+  background: #005a9e;
+}
+
+.update-check-button button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.update-notification-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(2px);
+}
+
+.update-notification {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.update-notification-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 20px 0 20px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 20px;
+}
+
+.update-notification-header h3 {
+  margin: 0;
+  color: #333;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #999;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.close-button:hover {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.update-notification-content {
+  padding: 0 20px 20px 20px;
+}
+
+.update-error {
+  text-align: center;
+}
+
+.update-error p {
+  margin: 0 0 10px 0;
+  color: #666;
+}
+
+.error-message {
+  background: #fee;
+  color: #c33;
+  padding: 10px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 14px;
+  margin: 15px 0 !important;
+}
+
+.update-checking {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #007acc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 15px auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.update-available p,
+.update-downloaded p {
+  margin: 0 0 15px 0;
+  color: #333;
+  line-height: 1.5;
+}
+
+.release-date {
+  color: #666 !important;
+  font-size: 14px !important;
+}
+
+.release-notes {
+  margin: 20px 0;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.release-notes h4 {
+  margin: 0;
+  padding: 10px 15px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #eee;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.release-notes-content {
+  padding: 15px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #666;
+  white-space: pre-wrap;
+}
+
+.update-downloading {
+  text-align: center;
+}
+
+.update-downloading p {
+  margin: 0 0 20px 0;
+  color: #333;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 15px 0;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #007acc, #0099ff);
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #666;
+  margin-top: 10px;
+}
+
+.update-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+}
+
+.update-actions button {
+  padding: 10px 20px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  color: #333;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  min-width: 100px;
+}
+
+.update-actions button:hover {
+  background: #f5f5f5;
+  border-color: #ccc;
+}
+
+.update-actions button.primary {
+  background: #007acc;
+  color: white;
+  border-color: #007acc;
+}
+
+.update-actions button.primary:hover {
+  background: #005a9e;
+  border-color: #005a9e;
+}
+
+.update-actions button:disabled {
+  background: #f5f5f5;
+  color: #999;
+  border-color: #ddd;
+  cursor: not-allowed;
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  .update-notification {
+    background: #2d2d2d;
+    color: #e0e0e0;
+  }
+
+  .update-notification-header {
+    border-bottom-color: #444;
+  }
+
+  .update-notification-header h3 {
+    color: #e0e0e0;
+  }
+
+  .close-button {
+    color: #999;
+  }
+
+  .close-button:hover {
+    background: #404040;
+    color: #ccc;
+  }
+
+  .update-available p,
+  .update-downloaded p,
+  .update-downloading p {
+    color: #e0e0e0;
+  }
+
+  .release-date {
+    color: #999 !important;
+  }
+
+  .release-notes {
+    border-color: #444;
+  }
+
+  .release-notes h4 {
+    background: #383838;
+    border-bottom-color: #444;
+    color: #e0e0e0;
+  }
+
+  .release-notes-content {
+    color: #ccc;
+  }
+
+  .error-message {
+    background: #4a2c2c;
+    color: #ff6b6b;
+  }
+
+  .progress-bar {
+    background: #404040;
+  }
+
+  .progress-info {
+    color: #999;
+  }
+
+  .update-actions {
+    border-top-color: #444;
+  }
+
+  .update-actions button {
+    background: #383838;
+    color: #e0e0e0;
+    border-color: #555;
+  }
+
+  .update-actions button:hover {
+    background: #404040;
+    border-color: #666;
+  }
+
+  .update-actions button.primary {
+    background: #007acc;
+    color: white;
+    border-color: #007acc;
+  }
+
+  .update-actions button.primary:hover {
+    background: #005a9e;
+    border-color: #005a9e;
+  }
+}

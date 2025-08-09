@@ -1,0 +1,168 @@
+# NoteSage Server Log Rotation Configuration
+# This file should be placed in /etc/logrotate.d/notesage
+
+/var/log/notesage/*.log {
+    # Rotate logs daily
+    daily
+    
+    # Keep 52 days of logs (about 2 months)
+    rotate 52
+    
+    # Compress old logs
+    compress
+    
+    # Don't compress the most recent rotated log
+    delaycompress
+    
+    # Don't rotate empty logs
+    notifempty
+    
+    # Don't error if log file is missing
+    missingok
+    
+    # Create new log files with specified permissions
+    create 644 notesage notesage
+    
+    # Copy and truncate instead of moving (safer for active processes)
+    copytruncate
+    
+    # Use date as suffix for rotated logs
+    dateext
+    dateformat -%Y%m%d
+    
+    # Set maximum size before forced rotation
+    maxsize 100M
+    
+    # Actions to take before rotation
+    prerotate
+        # Check if service is running before rotation
+        if ! systemctl is-active --quiet notesage; then
+            logger -t notesage-logrotate "Service not running, skipping log rotation"
+            exit 1
+        fi
+        
+        # Check disk space before rotation
+        AVAILABLE=$(df /var/log/notesage | awk 'NR==2 {print $4}')
+        if [ "$AVAILABLE" -lt 1048576 ]; then  # Less than 1GB
+            logger -t notesage-logrotate "Low disk space, forcing cleanup"
+            # Remove old compressed logs if disk space is low
+            find /var/log/notesage -name "*.gz" -mtime +7 -delete 2>/dev/null || true
+        fi
+    endscript
+    
+    # Actions to take after rotation
+    postrotate
+        # Send SIGUSR1 to NoteSage to reopen log files
+        if [ -f /var/run/notesage.pid ]; then
+            kill -USR1 $(cat /var/run/notesage.pid) 2>/dev/null || true
+        fi
+        
+        # Alternatively, reload the service
+        systemctl reload notesage 2>/dev/null || true
+        
+        # Log rotation event with statistics
+        ROTATED_SIZE=$(du -sh /var/log/notesage/*.log.1 2>/dev/null | cut -f1 || echo "unknown")
+        logger -t notesage-logrotate "Log files rotated, size: $ROTATED_SIZE"
+        
+        # Clean up very old logs if disk space is still low
+        AVAILABLE=$(df /var/log/notesage | awk 'NR==2 {print $4}')
+        if [ "$AVAILABLE" -lt 524288 ]; then  # Less than 512MB
+            logger -t notesage-logrotate "Critical disk space, removing old logs"
+            find /var/log/notesage -name "*.gz" -mtime +3 -delete 2>/dev/null || true
+        fi
+    endscript
+}
+
+# Backup logs (keep longer, rotate weekly)
+/var/log/notesage/backup.log {
+    weekly
+    rotate 24  # Keep 6 months of backup logs
+    compress
+    delaycompress
+    notifempty
+    missingok
+    create 644 notesage notesage
+    copytruncate
+    dateext
+    dateformat -%Y%m%d
+    maxsize 50M
+    
+    postrotate
+        logger -t notesage-logrotate "Backup log rotated"
+    endscript
+}
+
+# Health check logs (rotate more frequently, keep less)
+/var/log/notesage/health-check.log {
+    daily
+    rotate 14  # Keep 2 weeks of health check logs
+    compress
+    delaycompress
+    notifempty
+    missingok
+    create 644 notesage notesage
+    copytruncate
+    dateext
+    dateformat -%Y%m%d
+    maxsize 10M
+    
+    postrotate
+        logger -t notesage-logrotate "Health check log rotated"
+    endscript
+}
+
+# Upgrade logs (keep even longer)
+/var/log/notesage/upgrade.log {
+    monthly
+    rotate 36  # Keep 3 years of upgrade logs
+    compress
+    delaycompress
+    notifempty
+    missingok
+    create 644 notesage notesage
+    copytruncate
+    dateext
+    dateformat -%Y%m%d
+    maxsize 100M
+    
+    postrotate
+        logger -t notesage-logrotate "Upgrade log rotated"
+    endscript
+}
+
+# Rollback logs (keep for troubleshooting)
+/var/log/notesage/rollback*.log {
+    monthly
+    rotate 24  # Keep 2 years of rollback logs
+    compress
+    delaycompress
+    notifempty
+    missingok
+    create 644 notesage notesage
+    copytruncate
+    dateext
+    dateformat -%Y%m%d
+    
+    postrotate
+        logger -t notesage-logrotate "Rollback log rotated"
+    endscript
+}
+
+# Access logs (if enabled)
+/var/log/notesage/access.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    missingok
+    create 644 notesage notesage
+    copytruncate
+    dateext
+    dateformat -%Y%m%d
+    maxsize 200M
+    
+    postrotate
+        logger -t notesage-logrotate "Access log rotated"
+    endscript
+}

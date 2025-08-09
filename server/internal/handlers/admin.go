@@ -436,9 +436,6 @@ func (h *AdminHandler) getBackupInfo() []BackupInfo {
 	
 	// This is a simplified implementation
 	// In a real implementation, you would scan the backup directory
-	
-	return backups
-}
 
 func (h *AdminHandler) getMaintenanceTasks() []MaintenanceTask {
 	tasks := []MaintenanceTask{

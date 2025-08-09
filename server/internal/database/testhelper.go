@@ -7,15 +7,18 @@ import (
 
 	"notesage-server/internal/config"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-// SetupTestDB creates a test database connection
+// SetupTestDB creates a unique, in-memory test database for each test.
 func SetupTestDB(t *testing.T) *gorm.DB {
-	// Use in-memory SQLite for tests
+	// Create a unique database name for each test to ensure isolation.
+	dbName := fmt.Sprintf("file:testdb_%s?mode=memory&cache=shared", uuid.New().String())
+
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",
-		Name: ":memory:",
+		Name: dbName,
 	}
 
 	db, err := Initialize(cfg)
@@ -28,6 +31,11 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("Failed to migrate test database: %v", err)
 	}
 
+	// The CleanupTestDB function will be called automatically by t.Cleanup.
+	t.Cleanup(func() {
+		CleanupTestDB(db)
+	})
+
 	return db
 }
 
@@ -37,12 +45,7 @@ func SetupTestDBWithSeed(t *testing.T) *gorm.DB {
 
 	// Create a test user first
 	seeder := NewSeeder(db)
-	if err := seeder.SeedUsers(); err != nil {
-		t.Fatalf("Failed to seed test users: %v", err)
-	}
-
-	// Seed test data
-	if err := Seed(db); err != nil {
+	if err := seeder.SeedAll(); err != nil {
 		t.Fatalf("Failed to seed test database: %v", err)
 	}
 

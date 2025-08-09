@@ -13,6 +13,7 @@ import (
 )
 
 func TestInitialize(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		cfg     config.DatabaseConfig
@@ -388,6 +389,7 @@ func TestConnectionCRUD(t *testing.T) {
 }
 
 func TestForeignKeyConstraints(t *testing.T) {
+	t.Parallel()
 	db := SetupTestDB(t)
 	defer CleanupTestDB(db)
 

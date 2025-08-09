@@ -1,0 +1,40 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+
+database:
+  type: "sqlite"
+  host: "localhost"
+  port: 5432
+  name: "notesage"
+  user: "notesage"
+  password: "notesage_password"
+  ssl_mode: "disable"
+
+auth:
+  jwt_secret: "your-jwt-secret-change-in-production"
+  session_timeout: "24h"
+
+ai:
+  provider: "disabled"
+  api_key: ""
+  base_url: ""
+  model: ""
+  max_tokens: 1000
+  timeout: "30s"
+
+features:
+  ai_enabled: false
+  websocket_enabled: true
+  file_uploads: true
+  max_upload_size: "10MB"
+
+logging:
+  level: "info"
+  file: "logs/server.log"
+  max_size: 100
+  max_backups: 5

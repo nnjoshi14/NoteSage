@@ -109,7 +109,7 @@ export class SyncManager {
       await this.offlineCache.updateSyncMetadata('people', now);
       await this.offlineCache.updateSyncMetadata('todos', now);
 
-      result.success = result.failed === 0;
+      result.success = result.failed === 0 && result.errors.length === 0;
 
     } catch (error) {
       result.success = false;
@@ -151,8 +151,15 @@ export class SyncManager {
       // Process remote changes
       for (let i = 0; i < remoteNotes.length; i++) {
         try {
+          const conflictsBefore = this.syncStatus.conflicts.length;
           await this.processRemoteNote(remoteNotes[i]);
-          result.synced++;
+          const conflictsAfter = this.syncStatus.conflicts.length;
+          
+          if (conflictsAfter > conflictsBefore) {
+            result.conflicts++;
+          } else {
+            result.synced++;
+          }
         } catch (error) {
           result.failed++;
           result.errors.push(`Failed to process remote note ${remoteNotes[i].id}: ${error}`);
@@ -365,19 +372,19 @@ export class SyncManager {
   private async fetchRemoteNotes(client: AxiosInstance, since?: string): Promise<any[]> {
     const params = since ? { since } : {};
     const response = await client.get('/api/notes', { params });
-    return response.data.notes || [];
+    return response.data?.notes || [];
   }
 
   private async fetchRemotePeople(client: AxiosInstance, since?: string): Promise<any[]> {
     const params = since ? { since } : {};
     const response = await client.get('/api/people', { params });
-    return response.data.people || [];
+    return response.data?.people || [];
   }
 
   private async fetchRemoteTodos(client: AxiosInstance, since?: string): Promise<any[]> {
     const params = since ? { since } : {};
     const response = await client.get('/api/todos', { params });
-    return response.data.todos || [];
+    return response.data?.todos || [];
   }
 
   private async pushNoteToServer(client: AxiosInstance, note: CachedNote): Promise<void> {
@@ -401,12 +408,14 @@ export class SyncManager {
       const response = await client.post('/api/notes', noteData);
       const serverNote = response.data;
       
-      // Update local cache with server ID
-      await this.offlineCache.saveNote({
-        ...note,
-        server_id: serverNote.id,
-        sync_status: 'synced',
-      });
+      // Update local cache with server ID if available
+      if (serverNote && serverNote.id) {
+        await this.offlineCache.saveNote({
+          ...note,
+          server_id: serverNote.id,
+          sync_status: 'synced',
+        });
+      }
     }
   }
 
@@ -562,11 +571,13 @@ export class SyncManager {
 
   // Conflict handling
   private async handleNoteConflict(localNote: CachedNote, error: any): Promise<void> {
+    const remoteData = error.remoteData || error.response?.data || {};
+    
     const conflict: SyncConflict = {
       id: localNote.id,
       type: 'note',
       localData: localNote,
-      remoteData: error.remoteData,
+      remoteData,
       conflictReason: 'Both local and remote versions have been modified',
     };
 
@@ -692,25 +703,32 @@ export class SyncManager {
     // Update both local and remote with merged data
     switch (conflict.type) {
       case 'note':
-        await this.offlineCache.saveNote({
+        // Merge with local data to ensure all required fields are present
+        const noteToSave = {
+          ...conflict.localData,
           ...mergedData,
           sync_status: 'synced',
-        });
-        await this.pushNoteToServer(client, mergedData);
+        };
+        await this.offlineCache.saveNote(noteToSave);
+        await this.pushNoteToServer(client, noteToSave);
         break;
       case 'person':
-        await this.offlineCache.savePerson({
+        const personToSave = {
+          ...conflict.localData,
           ...mergedData,
           sync_status: 'synced',
-        });
-        await this.pushPersonToServer(client, mergedData);
+        };
+        await this.offlineCache.savePerson(personToSave);
+        await this.pushPersonToServer(client, personToSave);
         break;
       case 'todo':
-        await this.offlineCache.saveTodo({
+        const todoToSave = {
+          ...conflict.localData,
           ...mergedData,
           sync_status: 'synced',
-        });
-        await this.pushTodoToServer(client, mergedData);
+        };
+        await this.offlineCache.saveTodo(todoToSave);
+        await this.pushTodoToServer(client, todoToSave);
         break;
     }
   }
@@ -796,6 +814,89 @@ export class SyncManager {
       default:
         throw new Error(`Unknown table name: ${tableName}`);
     }
+  }
+
+  // Methods expected by tests
+  async createNote(note: any): Promise<any> {
+    if (this.serverConnection.isConnected()) {
+      try {
+        const client = this.serverConnection.getClient();
+        if (client) {
+          const serverNote = await client.post('/api/notes', note);
+          const savedNote = await this.offlineCache.saveNote({
+            ...serverNote.data,
+            sync_status: 'synced',
+          });
+          return savedNote;
+        }
+      } catch (error) {
+        // Fallback to offline
+      }
+    }
+
+    // Create offline
+    const localNote = await this.offlineCache.createNote(note);
+    await this.offlineCache.queueOperation({
+      type: 'create',
+      table: 'notes',
+      data: localNote,
+    });
+    return localNote;
+  }
+
+  async updateNote(id: string, updates: any): Promise<any> {
+    if (this.serverConnection.isConnected()) {
+      try {
+        const client = this.serverConnection.getClient();
+        if (client) {
+          const serverNote = await client.put(`/api/notes/${id}`, updates);
+          const savedNote = await this.offlineCache.updateNote(id, {
+            ...serverNote.data,
+            sync_status: 'synced',
+          });
+          return savedNote;
+        }
+      } catch (error) {
+        // Fallback to offline
+      }
+    }
+
+    // Update offline
+    const localNote = await this.offlineCache.updateNote(id, updates);
+    await this.offlineCache.queueOperation({
+      type: 'update',
+      table: 'notes',
+      id,
+      data: updates,
+    });
+    return localNote;
+  }
+
+  async deleteNote(id: string): Promise<void> {
+    if (this.serverConnection.isConnected()) {
+      try {
+        const client = this.serverConnection.getClient();
+        if (client) {
+          await client.delete(`/api/notes/${id}`);
+          await this.offlineCache.deleteNote(id);
+          return;
+        }
+      } catch (error) {
+        // Fallback to offline
+      }
+    }
+
+    // Delete offline
+    await this.offlineCache.deleteNote(id);
+    await this.offlineCache.queueOperation({
+      type: 'delete',
+      table: 'notes',
+      id,
+    });
+  }
+
+  async syncPendingOperations(): Promise<SyncResult> {
+    return this.processOfflineQueue();
   }
 
   async close(): Promise<void> {

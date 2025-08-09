@@ -287,6 +287,7 @@ func TestSeeder_ClearAll(t *testing.T) {
 }
 
 func TestSeeder_ForeignKeyRelationships(t *testing.T) {
+	t.Parallel()
 	db := SetupTestDB(t)
 	defer CleanupTestDB(db)
 

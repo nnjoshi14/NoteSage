@@ -298,6 +298,20 @@ export class OfflineCache {
     return noteData;
   }
 
+  async createNote(note: Partial<CachedNote>): Promise<CachedNote> {
+    return this.saveNote(note);
+  }
+
+  async updateNote(id: string, updates: Partial<CachedNote>): Promise<CachedNote> {
+    const existingNote = await this.getNote(id);
+    if (!existingNote) {
+      throw new Error(`Note with id ${id} not found`);
+    }
+
+    const updatedNote = { ...existingNote, ...updates, id };
+    return this.saveNote(updatedNote);
+  }
+
   async getNote(id: string): Promise<CachedNote | null> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -361,14 +375,16 @@ export class OfflineCache {
     return rows.map(row => this.mapNoteFromDb(row));
   }
 
-  async deleteNote(id: string): Promise<void> {
+  async deleteNote(id: string): Promise<boolean> {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare('DELETE FROM cached_notes WHERE id = ?');
-    stmt.run(id);
+    const result = stmt.run(id);
 
     // Add to offline queue
     await this.addToOfflineQueue('delete', 'notes', id);
+    
+    return result.changes > 0;
   }
 
   // Person operations
@@ -601,6 +617,15 @@ export class OfflineCache {
     `);
 
     stmt.run(operation, tableName, recordId, data ? JSON.stringify(data) : null, now);
+  }
+
+  async queueOperation(operation: { type: string; table: string; id?: string; data?: any }): Promise<void> {
+    await this.addToOfflineQueue(
+      operation.type as 'create' | 'update' | 'delete',
+      operation.table,
+      operation.id || 'unknown',
+      operation.data
+    );
   }
 
   async getOfflineQueue(): Promise<Array<{

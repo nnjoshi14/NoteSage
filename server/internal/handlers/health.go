@@ -1,13 +1,11 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"runtime"
 	"time"
 
-	"notesage-server/internal/database"
 	"notesage-server/internal/models"
 
 	"github.com/gin-gonic/gin"

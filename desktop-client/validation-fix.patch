@@ -1,0 +1,33 @@
+--- a/src/components/People/PersonForm.tsx
++++ b/src/components/People/PersonForm.tsx
+@@ -45,6 +45,7 @@ export const PersonForm: React.FC<PersonFormProps> = ({
+           placeholder="Enter full name"
+           required
+         />
++        {errors.name && <div className="validation-error">{errors.name}</div>}
+       </div>
+       
+       <div className="form-row">
+@@ -57,6 +58,7 @@ export const PersonForm: React.FC<PersonFormProps> = ({
+             placeholder="email@example.com"
+             type="email"
+           />
++          {errors.email && <div className="validation-error">{errors.email}</div>}
+         </div>
+         
+         <div className="form-group">
+@@ -85,6 +87,7 @@ export const PersonForm: React.FC<PersonFormProps> = ({
+             placeholder="https://linkedin.com/in/username"
+             type="url"
+           />
++          {errors.linkedinUrl && <div className="validation-error">{errors.linkedinUrl}</div>}
+         </div>
+       </div>
+       
+@@ -97,6 +100,7 @@ export const PersonForm: React.FC<PersonFormProps> = ({
+             placeholder="https://example.com/avatar.jpg"
+             type="url"
+           />
++          {errors.avatarUrl && <div className="validation-error">{errors.avatarUrl}</div>}
+         </div>
+       </div>

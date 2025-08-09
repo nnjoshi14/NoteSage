@@ -38,7 +38,10 @@ func (suite *SecurityTestSuite) SetupSuite() {
 			JWTSecret: "test-secret",
 		},
 		Features: config.FeaturesConfig{
-			AIEnabled: false,
+		AI: config.AIConfig{
+			Provider: "disabled",
+			APIKey:   "",
+		},			AIEnabled: false,
 		},
 	}
 

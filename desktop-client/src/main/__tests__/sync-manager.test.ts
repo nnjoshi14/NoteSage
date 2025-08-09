@@ -274,7 +274,18 @@ describe('SyncManager', () => {
       const conflict = {
         id: 'note-1',
         type: 'note' as const,
-        localData: { id: 'note-1', title: 'Local Version' },
+        localData: { 
+          id: 'note-1', 
+          title: 'Local Version',
+          server_id: 'server-note-1',
+          content: '{"type":"doc"}',
+          category: 'Note',
+          tags: [],
+          folder_path: '/',
+          is_archived: false,
+          is_pinned: false,
+          is_favorite: false,
+        },
         remoteData: { id: 'note-1', title: 'Remote Version' },
         conflictReason: 'Both versions modified',
       };
@@ -289,6 +300,7 @@ describe('SyncManager', () => {
       };
 
       mockAxiosInstance.put.mockResolvedValue({ data: {} });
+      mockAxiosInstance.post.mockResolvedValue({ data: { id: 'server-note-1' } });
 
       await syncManager.resolveConflict('note-1', resolution);
 

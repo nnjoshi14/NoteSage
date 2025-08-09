@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { SyncManager } from '../main/sync-manager';
 import { OfflineCache } from '../main/offline-cache';
 import { ServerConnection } from '../main/server-connection';
 
 // Mock dependencies
-vi.mock('../main/offline-cache');
-vi.mock('../main/server-connection');
+jest.mock('../main/offline-cache');
+jest.mock('../main/server-connection');
 
 describe('Offline/Online Synchronization Scenarios', () => {
   let syncManager: SyncManager;
@@ -19,7 +19,7 @@ describe('Offline/Online Synchronization Scenarios', () => {
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   describe('Offline Operations', () => {
@@ -210,7 +210,7 @@ describe('Offline/Online Synchronization Scenarios', () => {
       mockServerConnection.updateNote.mockRejectedValue(conflictError);
 
       // Mock user choosing to keep server version
-      vi.spyOn(syncManager, 'resolveConflict').mockResolvedValue('keep_remote');
+      jest.spyOn(syncManager, 'resolveConflict').mockResolvedValue('keep_remote');
 
       const result = await syncManager.syncPendingOperations();
 
@@ -261,7 +261,7 @@ describe('Offline/Online Synchronization Scenarios', () => {
 
   describe('Connection State Changes', () => {
     it('should automatically sync when connection is restored', async () => {
-      const syncSpy = vi.spyOn(syncManager, 'syncPendingOperations');
+      const syncSpy = jest.spyOn(syncManager, 'syncPendingOperations');
       
       // Simulate connection restored event
       mockServerConnection.emit('connected');
@@ -270,7 +270,7 @@ describe('Offline/Online Synchronization Scenarios', () => {
     });
 
     it('should handle rapid connection state changes', async () => {
-      const syncSpy = vi.spyOn(syncManager, 'syncPendingOperations');
+      const syncSpy = jest.spyOn(syncManager, 'syncPendingOperations');
       
       // Simulate rapid connection changes
       mockServerConnection.emit('disconnected');

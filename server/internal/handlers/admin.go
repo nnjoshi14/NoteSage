@@ -432,7 +432,6 @@ func (h *AdminHandler) getLogInfo() []LogInfo {
 }
 
 func (h *AdminHandler) getBackupInfo() []BackupInfo {
-	backupDir := "/var/lib/notesage/backups"
 	var backups []BackupInfo
 	
 	// This is a simplified implementation

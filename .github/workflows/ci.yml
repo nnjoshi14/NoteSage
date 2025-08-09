@@ -56,7 +56,7 @@ jobs:
         DB_PASSWORD: postgres
         DB_SSL_MODE: disable
         JWT_SECRET: test-secret
-      run: go test -v -coverprofile=coverage.out ./...
+      run: go test -race -v -coverprofile=coverage.out ./...
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -109,21 +109,13 @@ jobs:
       with:
         go-version: '1.21'
 
-    - name: Build for Linux
+    - name: Build for all platforms
       working-directory: ./server
       run: |
         GOOS=linux GOARCH=amd64 go build -o bin/notesage-server-linux-amd64 .
         GOOS=linux GOARCH=arm64 go build -o bin/notesage-server-linux-arm64 .
-
-    - name: Build for macOS
-      working-directory: ./server
-      run: |
         GOOS=darwin GOARCH=amd64 go build -o bin/notesage-server-darwin-amd64 .
         GOOS=darwin GOARCH=arm64 go build -o bin/notesage-server-darwin-arm64 .
-
-    - name: Build for Windows
-      working-directory: ./server
-      run: |
         GOOS=windows GOARCH=amd64 go build -o bin/notesage-server-windows-amd64.exe .
 
     - name: Upload server artifacts
@@ -139,7 +131,7 @@ jobs:
     
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
     - uses: actions/checkout@v4
@@ -169,6 +161,11 @@ jobs:
       working-directory: ./desktop-client
       run: npm run dist:mac
 
+    - name: Build distributables (Windows)
+      if: matrix.os == 'windows-latest'
+      working-directory: ./desktop-client
+      run: npm run dist:win
+
     - name: Upload desktop artifacts
       uses: actions/upload-artifact@v3
       with:
@@ -181,7 +178,6 @@ jobs:
     permissions:
       contents: read
       security_events: write
-
     steps:
     - uses: actions/checkout@v4
 
@@ -224,6 +220,12 @@ jobs:
       with:
         name: desktop-client-macos-latest
         path: ./release/desktop-macos/
+        
+    - name: Download desktop client artifacts (Windows)
+      uses: actions/download-artifact@v3
+      with:
+        name: desktop-client-windows-latest
+        path: ./release/desktop-windows/
 
     - name: Generate release tag
       id: tag
@@ -241,5 +243,6 @@ jobs:
           release/server/*
           release/desktop-ubuntu/*
           release/desktop-macos/*
+          release/desktop-windows/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
